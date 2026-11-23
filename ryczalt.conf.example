@@ -1,0 +1,34 @@
+# ryczalt configuration. Copy to ~/.config/ryczalt.conf and fill in.
+# Values follow shell rules: quotes are optional, " #" starts a comment.
+
+# Folder holding one YYYY-MM folder per month of invoices.
+archive=~/invoices
+
+[tax]
+# The setup this tool handles. Anything else is refused.
+form=ryczalt
+payment=monthly
+vat_status=exempt
+
+# First month of the business (YYYY-MM).
+business_start=2025-06
+
+# When revenue arises; the tool does not decide:
+#   period_end  last day of the settlement period agreed in the contract
+#               (art. 14 ust. 1e ustawy o PIT), e.g. a monthly retainer
+#   service     the day the service is done, unless the invoice or the
+#               payment comes earlier (art. 14 ust. 1c)
+revenue_basis=
+
+# Date the accountant confirmed revenue_basis (YYYY-MM-DD). While it is
+# blank, every report carries a warning.
+method_confirmed_on=
+
+[zus]
+# Last month of ulga na start and of preferential contributions (YYYY-MM),
+# as PUE ZUS shows them. Leave blank if you never had one.
+ulga_until=
+preferential_until=
+
+# yes if you pay voluntary sickness insurance (ubezpieczenie chorobowe).
+chorobowa=yes
