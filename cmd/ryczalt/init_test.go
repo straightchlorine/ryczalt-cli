@@ -24,6 +24,9 @@ func TestInit(t *testing.T) {
 	ksef := filepath.Join(dir, "ksef.conf")
 	os.WriteFile(ksef, []byte("env=prod\nnip = \"5260250274\"  # mine\nksef_token=\n"), 0o600)
 	t.Setenv("KSEF_CONFIG", ksef)
+	stdout := os.Stdout
+	os.Stdout, _ = os.Open(os.DevNull)
+	t.Cleanup(func() { os.Stdout.Close(); os.Stdout = stdout })
 	path := filepath.Join(dir, "sub", "ryczalt.conf")
 
 	if err := cmdInit([]string{"-c", path, "/srv/invoices"}); err != nil {

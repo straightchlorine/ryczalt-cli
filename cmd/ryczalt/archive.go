@@ -195,7 +195,7 @@ func readArchive(root, nip string) ([]invoice, []string, error) {
 	for n, inv := range draft {
 		if s, ok := sent[n]; ok {
 			if diff := differ(inv, s); diff != "" {
-				warn("%s: %s differs from the sent %s in %s; using the sent XML", n, inv.source, s.source, diff)
+				warn("%s: %s differs from the XML sent to KSeF (in %s) in %s; using the XML", n, inv.source, s.folder, diff)
 			}
 			continue
 		}

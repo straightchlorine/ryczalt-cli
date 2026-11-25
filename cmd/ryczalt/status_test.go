@@ -58,23 +58,26 @@ func TestStatus(t *testing.T) {
 	failed := printStatus(out, c, 2026, today, months, nil)
 	b, _ := os.ReadFile(out.Name())
 
-	want := `ryczalt dev  today 2026-07-20  ryczalt 12%  zus preferential  rules 2026 official
+	want := `ryczalt 2026
+Mon 2026-07-20 | 12% ryczalt | preferential ZUS with chorobowa | rules official
 
-Month    Invoice           Revenue PLN  Ryczalt*   Social   Health  Due         State
-2026-01  INV-02              13 332.00     1 600   456.18   498.35  2026-02-20  past due date
-2026-02  INV-03              13 332.00     1 600   456.18   498.35  2026-03-20  past due date
-2026-03  INV-04              13 332.00     1 600   456.18   498.35  2026-04-20  past due date
-2026-04  INV-05              13 332.00     1 599   456.18   498.35  2026-05-20  past due date
-2026-05  INV-06              13 332.00     1 600   456.18   830.58  2026-06-22  past due date
-2026-06  -                           -       n/a   456.18   830.58  2026-07-20  [ FAIL ] no invoice; due by 2026-07-15
-2026-07  -                           -       n/a   456.18   830.58  2026-08-20  in progress
+Month    Invoice  Revenue PLN  Ryczalt*  Social  Health  Due             State
+2026-01  INV-02     13 332.00     1 600  456.18  498.35  Fri 2026-02-20  past due date
+2026-02  INV-03     13 332.00     1 600  456.18  498.35  Fri 2026-03-20  past due date
+2026-03  INV-04     13 332.00     1 600  456.18  498.35  Mon 2026-04-20  past due date
+2026-04  INV-05     13 332.00     1 599  456.18  498.35  Wed 2026-05-20  past due date
+2026-05  INV-06     13 332.00     1 600  456.18  830.58  Mon 2026-06-22  past due date
+2026-06  -                  -       n/a  456.18  830.58  Mon 2026-07-20  [ FAIL ] no invoice; due by 2026-07-15
+2026-07  -                  -       n/a  456.18  830.58  Thu 2026-08-20  in progress
 
-* ryczalt before deducting paid ZUS (social, and half of health); the payment log will lower it
+* before deducting paid ZUS (social, and half of health); the payment log will lower it
 
-Year 2026 so far: revenue 66 660.00 PLN; health bracket up to 60 000, 60 000-300 000 from 2026-05
-Next payments by Mon 2026-07-20: ZUS 1 286.76 PLN for 2026-06, ryczalt once the month is invoiced
+Year so far   66 660.00 PLN revenue, health bracket 60k-300k
 
-[ WARN ] revenue_basis is not confirmed by an accountant yet (tax.method_confirmed_on)
+Next payment  Mon 2026-07-20, for 2026-06
+  zus         1 286.76 PLN (social 456.18, health 830.58)
+  ryczalt     not yet invoiced
+  total       1 286.76 PLN
 `
 	if string(b) != want {
 		t.Errorf("got\n%s\nwant\n%s", b, want)

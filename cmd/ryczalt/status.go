@@ -193,17 +193,30 @@ func cmdStatus(args []string) error {
 
 // printStatus writes the report and says whether anything failed.
 func printStatus(w *os.File, c config, year int, today time.Time, months []month, warns []string) bool {
-	fmt.Fprintf(w, "ryczalt %s  today %s  ryczalt %s%%  zus %s  rules %d %s\n\n",
-		version, today.Format(time.DateOnly), c.rate, zusPhase(c, today), year, rulesStatus(year))
+	phase := zusPhase(c, today) + " ZUS"
+	if c.chorobowa {
+		phase += " with chorobowa"
+	}
+	fmt.Fprintln(w, paint(w, bold, fmt.Sprintf("ryczalt %d", year)))
+	fmt.Fprintln(w, paint(w, dim, fmt.Sprintf("%s %s | %s%% ryczalt | %s | rules %s\n",
+		today.Weekday().String()[:3], today.Format(time.DateOnly), c.rate, phase, rulesStatus(year))))
 	if len(months) == 0 {
 		fmt.Fprintf(w, "No months of business in %d up to today.\n", year)
 		return false
 	}
 
-	line := func(cols ...string) {
-		fmt.Fprintln(w, strings.TrimRight(fmt.Sprintf("%-8s %-16s %12s %9s %8s %8s  %-10s  %s", toAny(cols)...), " "))
+	// the next month to pay for: the first whose deadline is not yet past
+	next := -1
+	for i, m := range months {
+		if !m.due.Before(today) {
+			next = i
+			break
+		}
 	}
-	line("Month", "Invoice", "Revenue PLN", "Ryczalt*", "Social", "Health", "Due", "State")
+
+	const colState = 7
+	rows := [][]string{{"Month", "Invoice", "Revenue PLN", "Ryczalt*", "Social", "Health", "Due", "State"}}
+	levels := []string{""}
 	failed := false
 	for _, m := range months {
 		inv := "-"
@@ -226,45 +239,62 @@ func printStatus(w *os.File, c config, year int, today time.Time, months []month
 			text = tag(w, map[string]string{"FAIL": red, "WARN": yellow, "INFO": cyan}[level], level) + " " + text
 		}
 		failed = failed || level == "FAIL"
-		line(m.start.Format("2006-01"), inv, revenue, ryczalt, social, plnText(m.health), m.due.Format(time.DateOnly), text)
+		rows = append(rows, []string{m.start.Format("2006-01"), inv, revenue, ryczalt, social,
+			plnText(m.health), m.due.Weekday().String()[:3] + " " + m.due.Format(time.DateOnly), text})
+		levels = append(levels, level)
 	}
-	fmt.Fprintln(w, "\n* ryczalt before deducting paid ZUS (social, and half of health); "+
-		"the payment log will lower it")
+	right := []bool{false, false, true, true, true, true, false, false}
+	printTable(w, rows, right, func(r, col int) string {
+		cell := rows[r][col]
+		switch {
+		case r == 0:
+			return bold
+		case col == colState && levels[r] != "":
+			return "" // the tag carries its own colour
+		case r-1 < next || next < 0: // deadline passed: history
+			return dim
+		case cell == "n/a" || cell == "-":
+			return dim
+		case strings.HasPrefix(cell, "~"):
+			return yellow
+		case r-1 == next && (col == 3 || col == 4 || col == 5 || col == 6):
+			return bold
+		case col == colState:
+			return cyan
+		}
+		return ""
+	})
+	fmt.Fprintln(w, "\n"+paint(w, dim, "* before deducting paid ZUS (social, and half of health); the payment log will lower it"))
 
-	// year summary
+	// year so far
 	revenue := amount{0, official}
 	for _, m := range months {
 		revenue.grosze += m.revenue.grosze
 		revenue.status = min(revenue.status, m.revenue.status)
 	}
-	fmt.Fprintf(w, "\nYear %d so far: revenue %s PLN; health bracket %s", year, plnText(revenue), bracketName(months[0].bracket))
-	for i := 1; i < len(months); i++ {
-		if months[i].bracket != months[i-1].bracket {
-			fmt.Fprintf(w, ", %s from %s", bracketName(months[i].bracket), months[i].start.Format("2006-01"))
-		}
-	}
-	fmt.Fprintln(w)
+	label := func(s string) string { return paint(w, dim, fmt.Sprintf("%-13s", s)) }
+	fmt.Fprintf(w, "\n%s %s PLN revenue, health bracket %s\n", label("Year so far"),
+		paint(w, bold, plnText(revenue)), bracketName(months[len(months)-1].bracket))
 
-	// the next payment that is not yet past
-	for _, m := range months {
-		if m.due.Before(today) {
-			continue
-		}
+	if next >= 0 {
+		m := months[next]
 		zus := amount{m.social.grosze + m.fpfs.grosze + m.health.grosze, min(m.social.status, m.fpfs.status, m.health.status)}
-		fmt.Fprintf(w, "Next payments by %s %s: ZUS %s PLN for %s", m.due.Weekday().String()[:3], m.due.Format(time.DateOnly),
-			plnText(zus), m.start.Format("2006-01"))
+		total, tax := zus, "not yet invoiced"
 		if m.ryczalt.status != unknown {
-			fmt.Fprintf(w, ", ryczalt up to %s PLN", strings.TrimSuffix(plnText(m.ryczalt), ".00"))
-		} else {
-			fmt.Fprint(w, ", ryczalt once the month is invoiced")
+			total = amount{zus.grosze + m.ryczalt.grosze, min(zus.status, m.ryczalt.status)}
+			tax = strings.TrimSuffix(plnText(m.ryczalt), ".00") + " PLN*"
 		}
-		fmt.Fprintln(w)
-		break
+		parts := fmt.Sprintf("social %s, health %s", plnText(m.social), plnText(m.health))
+		if m.fpfs.grosze != 0 {
+			parts += ", FP/FS " + plnText(m.fpfs)
+		}
+		fmt.Fprintf(w, "\n%s %s, for %s\n", label("Next payment"),
+			paint(w, bold, m.due.Weekday().String()[:3]+" "+m.due.Format(time.DateOnly)), m.start.Format("2006-01"))
+		fmt.Fprintf(w, "%s %s PLN (%s)\n", label("  zus"), plnText(zus), parts)
+		fmt.Fprintf(w, "%s %s\n", label("  ryczalt"), tax)
+		fmt.Fprintf(w, "%s %s\n", label("  total"), paint(w, bold, plnText(total)+" PLN"))
 	}
 
-	if c.methodConfirmedOn == "" {
-		warns = append(warns, "revenue_basis is not confirmed by an accountant yet (tax.method_confirmed_on)")
-	}
 	if len(warns) > 0 {
 		fmt.Fprintln(w)
 	}
@@ -274,9 +304,7 @@ func printStatus(w *os.File, c config, year int, today time.Time, months []month
 	return failed
 }
 
-func bracketName(b int) string {
-	return [...]string{"up to 60 000", "60 000-300 000", "above 300 000"}[b]
-}
+func bracketName(b int) string { return [...]string{"up to 60k", "60k-300k", "above 300k"}[b] }
 
 // rulesStatus is the weakest status among the year's figures.
 func rulesStatus(year int) status {
@@ -286,12 +314,4 @@ func rulesStatus(year int) status {
 		st = min(st, s)
 	}
 	return st
-}
-
-func toAny(s []string) []any {
-	out := make([]any, len(s))
-	for i, v := range s {
-		out[i] = v
-	}
-	return out
 }

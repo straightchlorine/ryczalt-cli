@@ -21,7 +21,6 @@ type config struct {
 	businessStart     time.Time // first month of business
 	rate              string    // ryczałt rate in percent, e.g. "12"
 	revenueBasis      string    // period_end | service, see ryczalt.conf.example
-	methodConfirmedOn string    // when an accountant confirmed revenueBasis; "" = not yet
 	ulgaUntil         time.Time // last month of ulga na start; zero = never had it
 	preferentialUntil time.Time // last month of preferential ZUS; zero = never had it
 	chorobowa         bool      // voluntary sickness insurance
@@ -30,7 +29,7 @@ type config struct {
 var configKeys = []string{
 	"archive",
 	"tax.nip", "tax.form", "tax.payment", "tax.vat_status", "tax.business_start",
-	"tax.rate", "tax.revenue_basis", "tax.method_confirmed_on",
+	"tax.rate", "tax.revenue_basis",
 	"zus.ulga_until", "zus.preferential_until", "zus.chorobowa",
 }
 
@@ -134,12 +133,6 @@ func parseConfig(r io.Reader) (config, error) {
 	// the rates of art. 12 ust. 1 ustawy o zryczałtowanym podatku
 	c.rate = oneOf("tax.rate", "17", "15", "14", "12.5", "12", "10", "8.5", "5.5", "3")
 	c.revenueBasis = oneOf("tax.revenue_basis", "period_end", "service")
-	if v := vals["tax.method_confirmed_on"]; v != "" {
-		if _, err := time.Parse(time.DateOnly, v); err != nil {
-			bad("tax.method_confirmed_on", fmt.Sprintf("%q is not a date like 2026-01-31", v))
-		}
-		c.methodConfirmedOn = v
-	}
 	c.ulgaUntil = month("zus.ulga_until")
 	c.preferentialUntil = month("zus.preferential_until")
 	for _, p := range []struct {

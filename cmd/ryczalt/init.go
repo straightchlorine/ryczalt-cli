@@ -45,10 +45,6 @@ business_start=
 #               payment comes earlier (art. 14 ust. 1c)
 revenue_basis=
 
-# Date the accountant confirmed revenue_basis (YYYY-MM-DD). While it is
-# blank, every report carries a warning.
-method_confirmed_on=
-
 [zus]
 # Last month of ulga na start and of preferential contributions (YYYY-MM),
 # as PUE ZUS shows them. Leave blank if you never had one.

@@ -107,7 +107,7 @@ func TestReadArchive(t *testing.T) {
 		"2026-01/invoice.json: no invoice number or date; skipped",
 		"2026-11/notes.xml: not readable XML (EOF); skipped",
 		"2026-11/purchase.xml: invoice THEIRS-1 was issued by NIP 1234563218, not by you; skipped",
-		"INV-04: 2026-04/invoice.json differs from the sent 2026-05/KSEF-04.xml in issue date (2026-04-01 vs 2026-04-02); using the sent XML",
+		"INV-04: 2026-04/invoice.json differs from the XML sent to KSeF (in 2026-05) in issue date (2026-04-01 vs 2026-04-02); using the XML",
 	}, "\n")
 	if got := strings.Join(warns, "\n"); got != wantWarns {
 		t.Errorf("warnings:\n%s\nwant\n%s", got, wantWarns)

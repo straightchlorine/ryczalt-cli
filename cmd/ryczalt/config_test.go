@@ -16,7 +16,6 @@ vat_status=exempt
 rate=12
 business_start=2025-06
 revenue_basis=period_end   # confirmed
-method_confirmed_on="2026-11-20"
 [zus]
 ulga_until=2025-12
 preferential_until=2027-12
@@ -34,7 +33,6 @@ func TestParseConfig(t *testing.T) {
 		businessStart:     time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
 		rate:              "12",
 		revenueBasis:      "period_end",
-		methodConfirmedOn: "2026-11-20",
 		ulgaUntil:         time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
 		preferentialUntil: time.Date(2027, 12, 1, 0, 0, 0, 0, time.UTC),
 		chorobowa:         true,
@@ -49,7 +47,7 @@ func TestParseConfigErrors(t *testing.T) {
 		name, old, new, want string
 		unsupported          bool
 	}{
-		{"unknown key", "chorobowa=yes", "chorobowa=yes\nchorobwa=no", "line 15: unknown key zus.chorobwa", false},
+		{"unknown key", "chorobowa=yes", "chorobowa=yes\nchorobwa=no", "line 14: unknown key zus.chorobwa", false},
 		{"key in wrong section", "chorobowa=yes", "chorobowa=yes\narchive=/srv", "unknown key zus.archive", false},
 		{"unknown section", "[zus]", "[vat]", "unknown section [vat]", false},
 		{"set twice", "payment=monthly", "payment=monthly\npayment=monthly", "tax.payment is set twice", false},
@@ -57,7 +55,6 @@ func TestParseConfigErrors(t *testing.T) {
 		{"missing", "revenue_basis=period_end   # confirmed", "revenue_basis=", "tax.revenue_basis: required", false},
 		{"bad choice", "chorobowa=yes", "chorobowa=tak", `zus.chorobowa: "tak" is not one of yes | no`, false},
 		{"bad month", "business_start=2025-06", "business_start=06-2025", "is not a month like 2026-01", false},
-		{"bad date", `"2026-11-20"`, "20.11.2026", "is not a date like 2026-01-31", false},
 		{"phases out of order", "preferential_until=2027-12", "preferential_until=2025-11", "must come after zus.ulga_until", false},
 		{"phase before start", "ulga_until=2025-12", "ulga_until=2025-01", "zus.ulga_until: before tax.business_start", false},
 		{"relative archive", "archive=/srv/invoices", "archive=invoices", `archive: "invoices" must be an absolute path`, false},
