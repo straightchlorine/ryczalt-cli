@@ -20,6 +20,7 @@ const usage = `Usage: ryczalt init [-c CONFIG] [ARCHIVE]
        ryczalt paid [-c CONFIG] [--on DATE | --on-due] PERIOD [KIND [AMOUNT]]
        ryczalt paid [-c CONFIG] --list [YEAR]
        ryczalt void [-c CONFIG] ID...
+       ryczalt year [-c CONFIG] [YEAR]
        ryczalt check [-c CONFIG]
        ryczalt rules [YEAR]
        ryczalt version
@@ -56,6 +57,10 @@ Subcommands:
               AMOUNT records a different amount, or a further payment.
               --list shows a year's payments with their ids.
   void        Cancel recorded payments by id; nothing is deleted.
+  year        The year settled: PIT-28 figures (revenue, the social and half
+              the health contributions paid that year, ryczalt, advances,
+              what is left to pay or comes back) and the annual health
+              settlement. Until May, last year.
   check       Everything worth knowing about the archive, beyond what status
               shows: drafts that differ from what was sent, invoices without
               a KSeF number, invoices issued late, session keys left in clear
@@ -91,6 +96,8 @@ func main() {
 		err = cmdPaid(os.Args[2:])
 	case "void":
 		err = cmdVoid(os.Args[2:])
+	case "year":
+		err = cmdYear(os.Args[2:])
 	case "check":
 		err = cmdCheck(os.Args[2:])
 	case "rules":

@@ -276,6 +276,9 @@ func cmdStatus(args []string) error {
 	found = append(found, asFindings("payments", pwarns)...)
 	found = append(found, asFindings("rates", notes)...)
 	found = append(found, checkInvoices(invs)...)
+	if f, ok := healthCliff(c, months, pays, year, today); ok {
+		found = append(found, f)
+	}
 	w := newReport(os.Stdout)
 	failed := printStatus(w, c, year, today, months, found)
 	if err := w.flush(); err != nil {
