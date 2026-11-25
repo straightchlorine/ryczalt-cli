@@ -97,9 +97,9 @@ Month    Invoice  Revenue PLN  Ryczalt*  Social  Health  Due             State
 Year so far   66 660.00 PLN revenue, health bracket 60k-300k
 
 Next payment  Thu 2026-08-20, for 2026-07
-  zus         1 286.76 PLN (social 456.18, health 830.58)
-  ryczalt     not yet invoiced
-  total       1 286.76 PLN
+  zus             1 286.76  social 456.18, health 830.58
+  ryczalt                   not yet invoiced
+  total           1 286.76  PLN
 `
 	if string(b) != want {
 		t.Errorf("got\n%s\nwant\n%s", b, want)

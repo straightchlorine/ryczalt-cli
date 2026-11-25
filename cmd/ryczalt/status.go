@@ -413,45 +413,48 @@ func printStatus(
 
 	if next >= 0 {
 		m := months[next]
-		owed := amount{m.zusOwed(), m.zusDue().status}
-		zus := "paid " + m.zusPaidOn.Format(time.DateOnly)
-		if m.zusOpen() {
-			zus = plnText(owed) + " PLN"
-			if m.zusPaid == 0 {
-				zus += fmt.Sprintf(" (social %s, health %s", plnText(m.social), plnText(m.health))
-				if m.fpfs.grosze != 0 {
-					zus += ", FP/FS " + plnText(m.fpfs)
-				}
-				zus += ")"
-			} else {
-				zus += " left of " + plnText(m.zusDue())
+		// pad first, colour after, so the amounts end in one column, as in year
+		row := func(name, value, note string, loud bool) {
+			v := fmt.Sprintf("%13s", value)
+			if loud {
+				v = paint(w, bold, v)
 			}
+			line := "  " + paint(w, cyan, fmt.Sprintf("%-11s", name)) + v
+			if note != "" {
+				line += "  " + paint(w, dim, note)
+			}
+			w.println(line)
 		}
+		owed := amount{m.zusOwed(), m.zusDue().status}
 		total := owed
-		tax := "not yet invoiced"
-		switch {
-		case m.ryczPaid:
-			tax = "paid " + m.ryczPaidOn.Format(time.DateOnly)
-		case m.ryczalt.status != unknown:
-			tax = strings.TrimSuffix(plnText(m.ryczalt), ".00") + " PLN*"
-			total = amount{total.grosze + m.ryczalt.grosze, min(total.status, m.ryczalt.status)}
-		}
 		head := label("Next payment")
 		if m.due.Before(today) {
 			head = paint(w, red, fmt.Sprintf("%-13s", "Overdue"))
 		}
-		w.printf("\n%s %s, for %s\n",
-			head,
-			paint(
-				w,
-				bold,
-				m.due.Weekday().String()[:3]+" "+m.due.Format(time.DateOnly),
-			),
-			m.start.Format("2006-01"),
-		)
-		w.printf("%s %s\n", label("  zus"), zus)
-		w.printf("%s %s\n", label("  ryczalt"), tax)
-		w.printf("%s %s\n", label("  total"), paint(w, bold, plnText(total)+" PLN"))
+		w.printf("\n%s %s, for %s\n", head,
+			paint(w, bold, m.due.Weekday().String()[:3]+" "+m.due.Format(time.DateOnly)), m.start.Format("2006-01"))
+		switch {
+		case !m.zusOpen():
+			row("zus", "", "paid "+m.zusPaidOn.Format(time.DateOnly), false)
+		case m.zusPaid == 0:
+			note := fmt.Sprintf("social %s, health %s", plnText(m.social), plnText(m.health))
+			if m.fpfs.grosze != 0 {
+				note += ", FP/FS " + plnText(m.fpfs)
+			}
+			row("zus", plnText(owed), note, false)
+		default:
+			row("zus", plnText(owed), "left of "+plnText(m.zusDue()), false)
+		}
+		switch {
+		case m.ryczPaid:
+			row("ryczalt", "", "paid "+m.ryczPaidOn.Format(time.DateOnly), false)
+		case m.ryczalt.status != unknown:
+			row("ryczalt", plnText(m.ryczalt), "in full*", false)
+			total = amount{total.grosze + m.ryczalt.grosze, min(total.status, m.ryczalt.status)}
+		default:
+			row("ryczalt", "", "not yet invoiced", false)
+		}
+		row("total", plnText(total), "PLN", true)
 	}
 
 	anyPaid, lastDue := false, -1
