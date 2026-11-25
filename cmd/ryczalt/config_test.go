@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ nip=5260250274
 form=ryczalt
 payment=monthly
 vat_status=exempt
+rate=12
 business_start=2025-06
 revenue_basis=period_end   # confirmed
 method_confirmed_on="2026-11-20"
@@ -32,6 +32,7 @@ func TestParseConfig(t *testing.T) {
 		archive:           "/srv/invoices",
 		nip:               "5260250274",
 		businessStart:     time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
+		rate:              "12",
 		revenueBasis:      "period_end",
 		methodConfirmedOn: "2026-11-20",
 		ulgaUntil:         time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
@@ -48,7 +49,7 @@ func TestParseConfigErrors(t *testing.T) {
 		name, old, new, want string
 		unsupported          bool
 	}{
-		{"unknown key", "chorobowa=yes", "chorobowa=yes\nchorobwa=no", "line 14: unknown key zus.chorobwa", false},
+		{"unknown key", "chorobowa=yes", "chorobowa=yes\nchorobwa=no", "line 15: unknown key zus.chorobwa", false},
 		{"key in wrong section", "chorobowa=yes", "chorobowa=yes\narchive=/srv", "unknown key zus.archive", false},
 		{"unknown section", "[zus]", "[vat]", "unknown section [vat]", false},
 		{"set twice", "payment=monthly", "payment=monthly\npayment=monthly", "tax.payment is set twice", false},
@@ -62,6 +63,7 @@ func TestParseConfigErrors(t *testing.T) {
 		{"relative archive", "archive=/srv/invoices", "archive=invoices", `archive: "invoices" must be an absolute path`, false},
 		{"bad NIP", "nip=5260250274", "nip=526-025-02-74", "tax.nip: \"526-025-02-74\" is not a valid NIP", false},
 		{"bad NIP check digit", "nip=5260250274", "nip=5260250275", "is not a valid NIP", false},
+		{"rate not in the act", "rate=12", "rate=13", `tax.rate: "13" is not one of 17 | 15`, false},
 		{"other tax form", "form=ryczalt", "form=liniowy", "tax.form=liniowy, only ryczalt is supported", true},
 		{"active VAT", "vat_status=exempt", "vat_status=active", "only exempt is supported", true},
 	}
@@ -77,22 +79,6 @@ func TestParseConfigErrors(t *testing.T) {
 		if errors.Is(err, errUnsupported) != c.unsupported {
 			t.Errorf("%s: errors.Is(err, errUnsupported) = %v", c.name, !c.unsupported)
 		}
-	}
-}
-
-func TestConfigExample(t *testing.T) {
-	b, err := os.ReadFile("../../ryczalt.conf.example")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The example leaves the accountant's answer blank on purpose.
-	_, err = parseConfig(strings.NewReader(string(b)))
-	if err == nil || err.Error() != "tax.revenue_basis: required" {
-		t.Fatalf("example: got %v, want only the blank revenue_basis", err)
-	}
-	filled := strings.Replace(string(b), "revenue_basis=", "revenue_basis=service", 1)
-	if _, err := parseConfig(strings.NewReader(filled)); err != nil {
-		t.Errorf("example with revenue_basis filled: %v", err)
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	red, yellow, cyan = "31", "33", "36"
+	red, green, yellow, cyan = "31", "32", "33", "36"
 )
 
 func isTerminal(w *os.File) bool {

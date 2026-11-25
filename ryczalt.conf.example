@@ -1,5 +1,6 @@
-# ryczalt configuration. Copy to ~/.config/ryczalt.conf and fill in.
-# Values follow shell rules: quotes are optional, " #" starts a comment.
+# ryczalt configuration. Values follow shell rules: quotes are optional,
+# " #" starts a comment. Unknown keys are errors, so a typo is reported
+# instead of ignored.
 
 # Folder holding one YYYY-MM folder per month of invoices.
 archive=~/invoices
@@ -14,10 +15,15 @@ form=ryczalt
 payment=monthly
 vat_status=exempt
 
-# First month of the business (YYYY-MM).
-business_start=2025-06
+# Ryczałt rate in percent for your services (art. 12 ustawy o
+# zryczałtowanym podatku): 12 for most software work, 8.5 for other IT
+# services. Check it against your PKWiU code.
+rate=12
 
-# When revenue arises; the tool does not decide:
+# First month of the business (YYYY-MM).
+business_start=
+
+# When revenue arises; ask your accountant, the tool does not decide:
 #   period_end  last day of the settlement period agreed in the contract
 #               (art. 14 ust. 1e ustawy o PIT), e.g. a monthly retainer
 #   service     the day the service is done, unless the invoice or the
@@ -34,5 +40,6 @@ method_confirmed_on=
 ulga_until=
 preferential_until=
 
-# yes if you pay voluntary sickness insurance (ubezpieczenie chorobowe).
-chorobowa=yes
+# yes if you pay the voluntary sickness insurance (ubezpieczenie
+# chorobowe), no if you pay only the obligatory contributions.
+chorobowa=

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ type config struct {
 	archive           string    // folder holding the YYYY-MM invoice folders
 	nip               string    // the seller's NIP; invoices from anyone else are not revenue
 	businessStart     time.Time // first month of business
+	rate              string    // ryczałt rate in percent, e.g. "12"
 	revenueBasis      string    // period_end | service, see ryczalt.conf.example
 	methodConfirmedOn string    // when an accountant confirmed revenueBasis; "" = not yet
 	ulgaUntil         time.Time // last month of ulga na start; zero = never had it
@@ -28,7 +30,7 @@ type config struct {
 var configKeys = []string{
 	"archive",
 	"tax.nip", "tax.form", "tax.payment", "tax.vat_status", "tax.business_start",
-	"tax.revenue_basis", "tax.method_confirmed_on",
+	"tax.rate", "tax.revenue_basis", "tax.method_confirmed_on",
 	"zus.ulga_until", "zus.preferential_until", "zus.chorobowa",
 }
 
@@ -129,6 +131,8 @@ func parseConfig(r io.Reader) (config, error) {
 	only("tax.vat_status", "exempt")
 	required("tax.business_start")
 	c.businessStart = month("tax.business_start")
+	// the rates of art. 12 ust. 1 ustawy o zryczałtowanym podatku
+	c.rate = oneOf("tax.rate", "17", "15", "14", "12.5", "12", "10", "8.5", "5.5", "3")
 	c.revenueBasis = oneOf("tax.revenue_basis", "period_end", "service")
 	if v := vals["tax.method_confirmed_on"]; v != "" {
 		if _, err := time.Parse(time.DateOnly, v); err != nil {
@@ -200,4 +204,55 @@ func validNIP(nip string) bool {
 		}
 	}
 	return sum%11 == int(nip[9]-'0')
+}
+
+// exitError carries the exit code a failure should end the program with:
+// 2 for usage and config errors, 3 for an unsupported setup.
+type exitError struct {
+	code int
+	err  error
+}
+
+func (e exitError) Error() string { return e.err.Error() }
+func (e exitError) Unwrap() error { return e.err }
+
+// configPath is -c if given, else $RYCZALT_CONFIG, else
+// $XDG_CONFIG_HOME/ryczalt.conf (default ~/.config/ryczalt.conf).
+func configPath(flag string) string {
+	if p := cmp.Or(flag, os.Getenv("RYCZALT_CONFIG")); p != "" {
+		return p
+	}
+	return xdgPath("XDG_CONFIG_HOME", ".config", "ryczalt.conf")
+}
+
+func loadConfig(flag string) (config, error) {
+	path := configPath(flag)
+	f, err := os.Open(path)
+	if err != nil {
+		return config{}, exitError{2, fmt.Errorf("%w; start from ryczalt.conf.example", err)}
+	}
+	defer f.Close()
+	c, err := parseConfig(f)
+	if err != nil {
+		code := 2
+		if errors.Is(err, errUnsupported) {
+			code = 3
+		}
+		return c, exitError{code, fmt.Errorf("%s:\n%w", path, err)}
+	}
+	return c, nil
+}
+
+// xdgPath is $envVar/name, or ~/fallback/name when the variable is unset
+// (copied from ksef-cli, cmd/ksef/config.go).
+func xdgPath(envVar, fallback, name string) string {
+	dir := os.Getenv(envVar)
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return name
+		}
+		dir = filepath.Join(home, fallback)
+	}
+	return filepath.Join(dir, name)
 }
