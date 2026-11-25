@@ -31,6 +31,10 @@ podaje kwoty do PIT-28 i rocznego rozliczenia składki zdrowotnej.
   archiwum do R2 lub innego S3
 - Podaje kwoty do PIT-28 i szacuje roczne rozliczenie składki zdrowotnej
 - Ostrzega, gdy roczny przychód zbliża się do progu składki zdrowotnej
+- Prowadzi ewidencję przychodów: tabela, CSV lub plik JPK_EWP(4) sprawdzony
+  oficjalnym schematem MF
+- Sprawdza archiwum (`ryczalt check`): brakujące numery KSeF, faktury
+  wystawione po terminie, kontrahent bez numeru VAT
 
 ## Jak zacząć?
 

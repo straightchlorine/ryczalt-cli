@@ -31,6 +31,10 @@ year gives the figures for PIT-28 and the annual health contribution settlement.
   the archive to R2 or another S3 bucket
 - Gives the PIT-28 figures and estimates the annual health settlement
 - Warns when the year's revenue nears a health bracket line
+- Keeps the revenue register: a table, CSV, or a JPK_EWP(4) file checked
+  against the official MF schema
+- Checks the archive (`ryczalt check`): missing KSeF numbers, invoices issued
+  late, buyers without a VAT number
 
 ## Getting started
 
