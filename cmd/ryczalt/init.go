@@ -87,7 +87,7 @@ func nipFromKsef(path string) string {
 func cmdInit(args []string) error {
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	cfgFlag := flags.String("c", "", "where to write the config")
-	if err := flags.Parse(args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
 	archive := "~/invoices"

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"runtime"
@@ -66,4 +67,25 @@ func printTable(w *os.File, rows [][]string, right []bool, colour func(row, col 
 		}
 		fmt.Fprintln(w, strings.TrimRight(strings.Join(cells, "  "), " "))
 	}
+}
+
+// parseFlags is flags.Parse that also takes flags after the arguments,
+// as in "ryczalt paid 2026-10 --on 2026-11-18"; "--" ends the flags.
+func parseFlags(flags *flag.FlagSet, args []string) error {
+	var positional []string
+	for {
+		if err := flags.Parse(args); err != nil {
+			return err
+		}
+		args = flags.Args()
+		if len(args) == 0 {
+			break
+		}
+		if args[0] == "--" {
+			positional = append(positional, args[1:]...)
+			break
+		}
+		positional, args = append(positional, args[0]), args[1:]
+	}
+	return flags.Parse(append([]string{"--"}, positional...))
 }

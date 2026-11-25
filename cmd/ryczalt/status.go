@@ -215,7 +215,7 @@ func cmdStatus(args []string) error {
 	cfgFlag := fs.String("c", "", "config file")
 	todayFlag := fs.String("today", "", "pretend today is `DATE` (YYYY-MM-DD)")
 	yearFlag := fs.Int("year", 0, "show `YEAR` instead of this one")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return exitError{2, err}
 	}
 	if fs.NArg() > 0 {
@@ -421,7 +421,7 @@ func asFindings(group string, texts []string) []finding {
 func cmdCheck(args []string) error {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	cfgFlag := flags.String("c", "", "config file")
-	if err := flags.Parse(args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
 	if flags.NArg() > 0 {

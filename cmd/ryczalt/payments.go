@@ -207,7 +207,7 @@ func cmdPaid(args []string) error {
 	onDue := flags.Bool("on-due", false, "record each month as paid on its deadline")
 	list := flags.Bool("list", false, "list the payments of a year")
 	flags.Usage = func() { fmt.Fprintln(os.Stderr, paidUsage) }
-	if err := flags.Parse(args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
 	c, err := loadConfig(*cfgFlag)
@@ -367,7 +367,7 @@ func listPayments(ps []payment, args []string) error {
 func cmdVoid(args []string) error {
 	flags := flag.NewFlagSet("void", flag.ContinueOnError)
 	cfgFlag := flags.String("c", "", "config file")
-	if err := flags.Parse(args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
 	if flags.NArg() == 0 {

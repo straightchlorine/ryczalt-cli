@@ -12,6 +12,7 @@ import (
 var version = "dev"
 
 const usage = `Usage: ryczalt init [-c CONFIG] [ARCHIVE]
+       ryczalt new [-c CONFIG] [--date DATE] [--number NUMBER] [MONTH]
        ryczalt status [-c CONFIG] [--year YEAR] [--today DATE]
        ryczalt paid [-c CONFIG] [--on DATE | --on-due] PERIOD [KIND [AMOUNT]]
        ryczalt paid [-c CONFIG] --list [YEAR]
@@ -27,6 +28,12 @@ Subcommands:
               never overwriting one. ARCHIVE is the folder of YYYY-MM
               invoice folders (default ~/invoices). The NIP is taken from
               ksef-cli's ksef.conf when there is one.
+  new         Prepare the invoice for a month of work (default last month)
+              as an Invoify invoice.json in the next month's folder, copied
+              from the previous one: number, dates, work period, the NBP rate
+              the PIT act asks for and the PLN amount filled in. Import it
+              into Invoify, check it, export the PDF. Shows what the month
+              will cost.
   status      Month by month for the year: revenue from the invoices in the
               archive (in PLN at the NBP rate the PIT act requires), ryczalt,
               social and health contributions, the payment deadline and what
@@ -59,6 +66,8 @@ func main() {
 	switch cmd := os.Args[1]; cmd {
 	case "init":
 		err = cmdInit(os.Args[2:])
+	case "new":
+		err = cmdNew(os.Args[2:])
 	case "status":
 		err = cmdStatus(os.Args[2:])
 	case "paid":

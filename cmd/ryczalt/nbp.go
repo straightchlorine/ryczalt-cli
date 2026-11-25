@@ -48,11 +48,13 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 	// must not be cached
 	y, m, d := time.Now().In(warsaw).Date()
 	if !before.Before(time.Date(y, m, d, 0, 0, 0, 0, time.UTC)) {
-		return nbpRate{}, fmt.Errorf(
-			"the %s rate for revenue on %s is not published yet",
-			currency,
-			revenue.Format(time.DateOnly),
-		)
+		table := before
+		for !isWorkingDay("PL", table) {
+			table = table.AddDate(0, 0, -1)
+		}
+		return nbpRate{}, fmt.Errorf("the %s rate for revenue on %s comes from NBP's table of %s %s, "+
+			"published that day around noon; try again then", currency, revenue.Format(time.DateOnly),
+			table.Weekday().String()[:3], table.Format(time.DateOnly))
 	}
 	cache := filepath.Join(
 		cacheDir,
