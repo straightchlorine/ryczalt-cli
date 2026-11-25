@@ -8,17 +8,17 @@ import (
 	"testing"
 )
 
-// run calls a command with stdout captured.
+// run calls a command with stdout and stderr captured.
 func run(t *testing.T, cmd func([]string) error, args ...string) (string, error) {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "out")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stdout := os.Stdout
-	os.Stdout = f
+	stdout, stderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = f, f
 	err = cmd(args)
-	os.Stdout = stdout
+	os.Stdout, os.Stderr = stdout, stderr
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}

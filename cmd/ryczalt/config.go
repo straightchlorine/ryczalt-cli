@@ -28,6 +28,11 @@ type config struct {
 	chorobowa         bool      // voluntary sickness insurance
 	paymentDays       int       // days the client has to pay
 	clientCalendar    string    // whose holidays move the client's deadline, see validCalendar
+	ksefBin           string    // ksef-cli binary; "" = ksef from PATH
+	ksefConfig        string    // KSEF_CONFIG for it; "" = ksef-cli's own default
+	r2Bucket          string    // off-site copy; "" = none
+	r2Profile         string
+	r2Endpoint        string
 }
 
 var configKeys = []string{
@@ -36,6 +41,8 @@ var configKeys = []string{
 	"tax.rate", "tax.revenue_basis",
 	"zus.ulga_until", "zus.preferential_until", "zus.chorobowa",
 	"client.payment_days", "client.calendar",
+	"ksef.bin", "ksef.config",
+	"r2.bucket", "r2.profile", "r2.endpoint",
 }
 
 // errUnsupported marks a setup ryczalt does not handle; commands exit 3 on it.
@@ -162,6 +169,12 @@ func parseConfig(r io.Reader) (config, error) {
 	}
 	if c.clientCalendar = strings.Join(strings.Fields(required("client.calendar")), " "); c.clientCalendar != "" && !validCalendar(c.clientCalendar) {
 		bad("client.calendar", fmt.Sprintf("%q is not PL or DE-<state> (e.g. DE-BY), with optional +MM-DD days", c.clientCalendar))
+	}
+	c.ksefBin = expandHome(vals["ksef.bin"])
+	c.ksefConfig = expandHome(vals["ksef.config"])
+	c.r2Bucket, c.r2Profile, c.r2Endpoint = vals["r2.bucket"], vals["r2.profile"], vals["r2.endpoint"]
+	if c.r2Bucket == "" && (c.r2Profile != "" || c.r2Endpoint != "") {
+		bad("r2.bucket", "required when [r2] has a profile or an endpoint")
 	}
 
 	return c, errors.Join(errs...)

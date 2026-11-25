@@ -13,6 +13,9 @@ var version = "dev"
 
 const usage = `Usage: ryczalt init [-c CONFIG] [ARCHIVE]
        ryczalt new [-c CONFIG] [--date DATE] [--number NUMBER] [MONTH]
+       ryczalt add [-c CONFIG] [--month YYYY-MM] [--move|-m] FILE...
+       ryczalt send [-c CONFIG] [MONTH]
+       ryczalt sync [-c CONFIG] [--delete] [--dry-run]
        ryczalt status [-c CONFIG] [--year YEAR] [--today DATE]
        ryczalt paid [-c CONFIG] [--on DATE | --on-due] PERIOD [KIND [AMOUNT]]
        ryczalt paid [-c CONFIG] --list [YEAR]
@@ -34,6 +37,14 @@ Subcommands:
               the PIT act asks for and the PLN amount filled in. Import it
               into Invoify, check it, export the PDF. Shows what the month
               will cost.
+  add         Put documents (the invoice PDF from Invoify, a contract, a
+              receipt) into a month folder, by default the newest invoice's.
+              --move removes the originals once copied. Never overwrites.
+  send        Send a month's invoice to KSeF with ksef-cli (default: the one
+              invoice.json not yet sent), keeping the FA(3) and its UPO in
+              the month folder; ksef-cli asks before sending. Then sync.
+  sync        Push the archive to the [r2] bucket with the aws CLI. Never
+              pulls; --delete also removes from R2 what the archive lost.
   status      Month by month for the year: revenue from the invoices in the
               archive (in PLN at the NBP rate the PIT act requires), ryczalt,
               social and health contributions, the payment deadline and what
@@ -68,6 +79,12 @@ func main() {
 		err = cmdInit(os.Args[2:])
 	case "new":
 		err = cmdNew(os.Args[2:])
+	case "add":
+		err = cmdAdd(os.Args[2:])
+	case "send":
+		err = cmdSend(os.Args[2:])
+	case "sync":
+		err = cmdSync(os.Args[2:])
 	case "status":
 		err = cmdStatus(os.Args[2:])
 	case "paid":

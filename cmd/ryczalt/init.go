@@ -67,6 +67,15 @@ payment_days=7
 # DE-BY for Bavaria).
 # Fixed days only the client's town keeps can be added: e.g. DE-BY +08-08 for Augsburg.
 calendar=
+
+[ksef]   # how ryczalt send reaches ksef-cli; both optional
+# bin=ksef                      # the ksef-cli binary, default: ksef on PATH
+# config=~/.config/ksef.conf    # passed as KSEF_CONFIG, default: ksef-cli's own
+
+[r2]   # optional off-site copy pushed by ryczalt sync (and after send)
+# bucket=                       # an S3 bucket, e.g. on Cloudflare R2
+# profile=                      # the aws CLI profile with its credentials
+# endpoint=                     # e.g. https://<account>.r2.cloudflarestorage.com
 `
 
 // ksefConfigPath is where ksef-cli keeps its config: $KSEF_CONFIG, else
