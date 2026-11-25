@@ -29,7 +29,9 @@ podaje kwoty do PIT-28 i rocznego rozliczenia składki zdrowotnej.
   [Invoify](https://github.com/al1abb/invoify) z poprzedniego
 - Wysyła fakturę do KSeF przez [ksef-cli](https://codeberg.org/piotrkrzysztof/ksef-cli) i kopiuje
   archiwum do R2 lub innego S3
-- Podaje kwoty do PIT-28 i szacuje roczne rozliczenie składki zdrowotnej
+- Podaje kwoty do PIT-28 i szacuje roczne rozliczenie składki zdrowotnej, także
+  pole po polu do PIT-28 i bloku XII DRA (`ryczalt forms`)
+- Uwzględnia zawieszenie działalności
 - Ostrzega, gdy roczny przychód zbliża się do progu składki zdrowotnej
 - Prowadzi ewidencję przychodów: tabela, CSV lub plik JPK_EWP(4) sprawdzony
   oficjalnym schematem MF

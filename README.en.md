@@ -29,7 +29,9 @@ year gives the figures for PIT-28 and the annual health contribution settlement.
   file, copied from the previous one
 - Sends the invoice to KSeF through [ksef-cli](https://codeberg.org/piotrkrzysztof/ksef-cli) and copies
   the archive to R2 or another S3 bucket
-- Gives the PIT-28 figures and estimates the annual health settlement
+- Gives the PIT-28 figures and estimates the annual health settlement, also field
+  by field for PIT-28 and block XII of the DRA (`ryczalt forms`)
+- Handles a suspended business (zawieszenie)
 - Warns when the year's revenue nears a health bracket line
 - Keeps the revenue register: a table, CSV, or a JPK_EWP(4) file checked
   against the official MF schema
