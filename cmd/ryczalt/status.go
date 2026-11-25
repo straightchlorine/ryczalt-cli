@@ -17,16 +17,17 @@ var errFailed = errors.New("something needs attention")
 // month is one calendar month of business: ZUS is due for it whether or
 // not it was invoiced, ryczałt only on what was invoiced.
 type month struct {
-	start    time.Time // first day, UTC midnight
-	invoices []string
-	revenue  amount // grosze; unknown when a rate could not be had
-	invoiced bool
-	ryczalt  amount // whole PLN in grosze; before deductions of paid ZUS
-	social   amount // emerytalna, rentowa, wypadkowa, chorobowa
-	fpfs     amount
-	health   amount
-	bracket  int // 0, 1, 2: up to 60 000, up to 300 000, above
-	due      time.Time
+	start     time.Time // first day, UTC midnight
+	invoices  []string
+	revenue   amount // grosze; unknown when a rate could not be had
+	invoiced  bool
+	ryczalt   amount // whole PLN in grosze; before deductions of paid ZUS
+	social    amount // emerytalna, rentowa, wypadkowa, chorobowa
+	fpfs      amount
+	health    amount
+	bracket   int // 0, 1, 2: up to 60 000, up to 300 000, above
+	due       time.Time
+	suspended bool // the business is suspended all month: nothing due
 
 	zusPaid     int64 // social, health and FP/FS recorded as paid, grosze
 	zusPaidOn   time.Time
@@ -148,6 +149,14 @@ func buildYear(
 		if cumRevenue.status == unknown {
 			row.health.status = unknown
 		}
+		if c.suspended(m) {
+			row.suspended = true
+			row.social, row.fpfs, row.health = amount{0, official}, amount{0, official}, amount{0, official}
+			if row.invoiced {
+				notes = append(notes, fmt.Sprintf("%s: revenue in a suspended month (%s)",
+					strings.Join(row.invoices, ", "), m.Format("2006-01")))
+			}
+		}
 
 		// ryczałt is worked out from 1 January (art. 21 ustawy o
 		// zryczałtowanym podatku): rate x base, less what earlier months owe
@@ -175,6 +184,9 @@ func buildYear(
 
 // monthState says where a month stands on day today, and how loud to say it.
 func monthState(m month, today time.Time) (text string, level string) {
+	if m.suspended && !m.invoiced {
+		return "suspended", ""
+	}
 	end := m.start.AddDate(0, 1, 0)
 	invoiceBy := shiftDeadline(
 		"PL",
@@ -306,6 +318,9 @@ func printStatus(
 	phase := zusPhase(c, shown) + " ZUS"
 	if c.chorobowa {
 		phase += " with chorobowa"
+	}
+	if c.suspended(shown) {
+		phase = "suspended since " + c.suspendedFrom.Format("2006-01")
 	}
 	w.println(paint(w, bold, fmt.Sprintf("ryczalt %d", year)))
 	w.println(paint(w, dim, fmt.Sprintf(

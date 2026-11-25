@@ -39,6 +39,12 @@ rate=12
 # First month of the business (YYYY-MM).
 business_start=
 
+# Suspension: the first and the last month the business is suspended in
+# full (YYYY-MM); no ZUS and no invoices are expected then. Leave
+# suspended_until blank for "until further notice".
+# suspended_from=
+# suspended_until=
+
 # When revenue arises; ask your accountant, the tool does not decide:
 #   period_end  last day of the settlement period agreed in the contract
 #               (art. 14 ust. 1e ustawy o PIT), e.g. a monthly retainer

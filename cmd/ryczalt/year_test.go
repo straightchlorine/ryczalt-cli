@@ -16,7 +16,7 @@ import (
 //   - advances: all twelve, 19 198 (12% of the whole year's revenue, month by month)
 //   - refund 19 198 - 18 127 = 1 071
 //   - health: 159 984.00 - 5 017.98 = 154 966.02, bracket 60k-300k:
-//     12 x 830.58 = 9 966.96 against 8 638.04 due monthly, top-up 1 328.92
+//     9% of 12 x 9 228.64 = 9 966.93 against 8 638.04 due monthly, top-up 1 328.89
 func TestSettleYear(t *testing.T) {
 	fakeNBPFlat(t)
 	oldClock := clock
@@ -49,7 +49,7 @@ func TestSettleYear(t *testing.T) {
 		"year health": s.healthYear.grosze, "monthly health": s.healthMonthly, "settle": s.healthSettle}
 	want := map[string]int64{"revenue": 15998400, "social": 501798, "health": 780746,
 		"base": 15106200, "tax": 1812700, "advances": 1919800, "result": -107100,
-		"year health": 996696, "monthly health": 863804, "settle": 132892}
+		"year health": 996693, "monthly health": 863804, "settle": 132889}
 	for k, w := range want {
 		if got[k] != w {
 			t.Errorf("%s = %d, want %d", k, got[k], w)
@@ -72,7 +72,7 @@ func TestSettleYear(t *testing.T) {
 		"    - 50% of health ZUS paid    -3 903.73  half of 7 807.46: ryczalt deducts half",
 		"    = refund                     1 071.00",
 		"    - billed month by month     -8 638.04  Jan-Apr 498.35, May-Dec 830.58",
-		"    = to pay by 20 May           1 328.92  Jan-Apr: 4 x (830.58 - 498.35)",
+		"    = to pay by 20 May           1 328.89  Jan-Apr billed at 498.35 instead of 830.58",
 		"PIT-28 for 2026  filed 2027-02-15 to 2027-04-30",
 	} {
 		if !strings.Contains(out, want) {
@@ -134,7 +134,7 @@ func TestYearEstimate(t *testing.T) {
 	}
 	// the same whole year as TestSettleYear, so the same results
 	est := settleYear(c, ext, extPays, 2026, day(t, "2026-12-31"))
-	if est.result != -107100 || est.healthSettle != 132892 || est.months != 12 {
+	if est.result != -107100 || est.healthSettle != 132889 || est.months != 12 {
 		t.Errorf("estimate: result %d, health %d, months %d", est.result, est.healthSettle, est.months)
 	}
 }

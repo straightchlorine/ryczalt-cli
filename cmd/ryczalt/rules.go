@@ -133,6 +133,16 @@ func contribution(base *big.Rat, rates ...*big.Rat) int64 {
 // świadczeniach opieki zdrowotnej, art. 81 ust. 2h).
 var healthShares = []*big.Rat{big.NewRat(60, 100), big.NewRat(100, 100), big.NewRat(180, 100)}
 
+// healthBase is the monthly ryczałt health base for bracket 0, 1 or 2, in
+// grosze: 60, 100 or 180% of the year's health_wage.
+func healthBase(year, bracket int) amount {
+	w, st := lookup(year, "health_wage")
+	if st == unknown {
+		return amount{}
+	}
+	return amount{grosze(new(big.Rat).Mul(w, healthShares[bracket])), st}
+}
+
 // healthMonthly is the ryczałt health contribution for bracket 0, 1 or 2.
 func healthMonthly(year, bracket int) amount {
 	w, st := lookup(year, "health_wage")

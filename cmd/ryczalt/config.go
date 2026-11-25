@@ -22,6 +22,8 @@ type config struct {
 	archive           string    // folder holding the YYYY-MM invoice folders
 	nip               string    // the seller's NIP; invoices from anyone else are not revenue
 	businessStart     time.Time // first month of business
+	suspendedFrom     time.Time // first month the business is suspended (zawieszenie); zero = never
+	suspendedUntil    time.Time // last suspended month; zero = until further notice
 	rate              string    // ryczałt rate in percent, e.g. "12"
 	revenueBasis      string    // period_end | service, see ryczalt.conf.example
 	ulgaUntil         time.Time // last month of ulga na start; zero = never had it
@@ -58,7 +60,7 @@ func (c config) jpkMissing() []string {
 
 var configKeys = []string{
 	"archive",
-	"tax.nip", "tax.form", "tax.payment", "tax.vat_status", "tax.business_start",
+	"tax.nip", "tax.form", "tax.payment", "tax.vat_status", "tax.business_start", "tax.suspended_from", "tax.suspended_until",
 	"tax.rate", "tax.revenue_basis",
 	"zus.ulga_until", "zus.preferential_until", "zus.chorobowa",
 	"client.payment_days", "client.calendar",
@@ -164,6 +166,15 @@ func parseConfig(r io.Reader) (config, error) {
 	only("tax.vat_status", "exempt")
 	required("tax.business_start")
 	c.businessStart = month("tax.business_start")
+	c.suspendedFrom, c.suspendedUntil = month("tax.suspended_from"), month("tax.suspended_until")
+	switch {
+	case !c.suspendedUntil.IsZero() && c.suspendedFrom.IsZero():
+		bad("tax.suspended_until", "needs tax.suspended_from")
+	case !c.suspendedUntil.IsZero() && c.suspendedUntil.Before(c.suspendedFrom):
+		bad("tax.suspended_until", "before tax.suspended_from")
+	case !c.suspendedFrom.IsZero() && !c.businessStart.IsZero() && c.suspendedFrom.Before(c.businessStart):
+		bad("tax.suspended_from", "before tax.business_start")
+	}
 	// the rates of art. 12 ust. 1 ustawy o zryczałtowanym podatku
 	c.rate = oneOf("tax.rate", "17", "15", "14", "12.5", "12", "10", "8.5", "5.5", "3")
 	c.revenueBasis = oneOf("tax.revenue_basis", "period_end", "service")
@@ -324,4 +335,12 @@ func xdgPath(envVar, fallback, name string) string {
 		dir = filepath.Join(home, fallback)
 	}
 	return filepath.Join(dir, name)
+}
+
+// suspended reports whether month m (its first day) is a month of the
+// business suspended in full: no ZUS, no health contribution, no invoice.
+// NOTE: whole months only
+func (c config) suspended(m time.Time) bool {
+	return !c.suspendedFrom.IsZero() && !m.Before(c.suspendedFrom) &&
+		(c.suspendedUntil.IsZero() || !m.After(c.suspendedUntil))
 }
