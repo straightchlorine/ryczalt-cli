@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/csv"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -70,7 +72,8 @@ func readPayments(root string) ([]payment, []string, error) {
 			}
 			ps, err := readPaymentsFile(filepath.Join(root, rel), rel)
 			if err != nil {
-				return nil, nil, err
+				warns = append(warns, fmt.Sprintf("%v; the whole file is left out until it is fixed", err))
+				continue
 			}
 			all = append(all, ps...)
 		}
@@ -100,12 +103,11 @@ func readPayments(root string) ([]payment, []string, error) {
 }
 
 func readPaymentsFile(path, rel string) ([]payment, error) {
-	f, err := os.Open(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	rows, err := csv.NewReader(f).ReadAll()
+	rows, err := csv.NewReader(bytes.NewReader(b)).ReadAll()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", rel, err)
 	}
@@ -142,18 +144,20 @@ func readPaymentsFile(path, rel string) ([]payment, error) {
 // with one write, so a crash never leaves half a line.
 func appendPayments(root string, ps []payment) (string, error) {
 	host, _ := os.Hostname()
-	host = regexp.MustCompile(`[^A-Za-z0-9-]`).ReplaceAllString(host, "-")
-	if host == "" {
-		host = "local"
-	}
-	rel := filepath.Join(ps[0].paidOn.Format("2006"), "payments."+host+".csv")
+	rel := filepath.Join(ps[0].paidOn.Format("2006"), "payments."+safeHost(host)+".csv")
 	path := filepath.Join(root, rel)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
 	var b strings.Builder
-	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+	existing, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
 		b.WriteString(paymentsHeader + "\n")
+	case err != nil:
+		return "", err
+	case len(existing) > 0 && existing[len(existing)-1] != '\n':
+		b.WriteString("\n") // the last line was left open, e.g. by a hand edit
 	}
 	w := csv.NewWriter(&b)
 	for _, p := range ps {
@@ -161,15 +165,20 @@ func appendPayments(root string, ps []payment) (string, error) {
 		if p.kind != "void" {
 			amount = fmt.Sprintf("%d.%02d", p.grosze/100, p.grosze%100)
 		}
-		w.Write([]string{p.id, p.paidOn.Format(time.DateOnly), p.period.Format("2006-01"), p.kind, amount, p.voids})
+		if err := w.Write([]string{p.id, p.paidOn.Format(time.DateOnly), p.period.Format("2006-01"), p.kind, amount, p.voids}); err != nil {
+			return "", err
+		}
 	}
 	w.Flush()
+	if err := w.Error(); err != nil {
+		return "", err
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return "", err
 	}
 	if _, err := f.WriteString(b.String()); err != nil {
-		f.Close()
+		_ = f.Close() // the write error is the one to report
 		return "", err
 	}
 	return rel, f.Close()
@@ -198,7 +207,7 @@ const paidUsage = `usage: ryczalt paid [-c CONFIG] [--on DATE | --on-due] PERIOD
        ryczalt paid [-c CONFIG] --list [YEAR]
 PERIOD is a month (2026-10) or a range (2026-01..2026-10). KIND is zus
 (social, health and FP/FS at the amounts due), social, health, fpfs or
-ryczalt; none means zus and ryczalt. AMOUNT overrides the amount due.`
+ryczalt; none means zus and ryczalt. AMOUNT overrides the amount due`
 
 func cmdPaid(args []string) error {
 	flags := flag.NewFlagSet("paid", flag.ContinueOnError)
@@ -250,18 +259,22 @@ func cmdPaid(args []string) error {
 	}
 	var override int64 = -1
 	if len(a) == 3 {
-		r, ok := new(big.Rat).SetString(strings.ReplaceAll(a[2], ",", "."))
-		if !ok || r.Sign() <= 0 || kind == "zus" || kind == "" || from != to {
+		if kind == "zus" || kind == "" || from != to {
 			return exitError{2, errors.New("an AMOUNT needs one month and one kind other than zus " +
 				"(record social and health separately)")}
 		}
-		override = grosze(r)
+		if override = parseAmount(a[2]); override <= 0 {
+			return exitError{2, fmt.Errorf("amount %q is not like 1758 or 830.58", a[2])}
+		}
 	}
 	today := todayWarsaw()
 	paidOn := today
 	if *onFlag != "" {
 		if paidOn, err = time.Parse(time.DateOnly, *onFlag); err != nil {
 			return exitError{2, fmt.Errorf("--on wants a date like 2026-11-20, got %q", *onFlag)}
+		}
+		if paidOn.After(today) {
+			return exitError{2, fmt.Errorf("--on %s is in the future", *onFlag)}
 		}
 	}
 
@@ -274,6 +287,7 @@ func cmdPaid(args []string) error {
 		fmt.Println(tag(os.Stdout, yellow, "WARN"), n)
 	}
 	var rows []payment
+	var already []string
 	for p := from; !p.After(to); p = p.AddDate(0, 1, 0) {
 		i := slices.IndexFunc(months, func(m month) bool { return m.start.Equal(p) })
 		if i < 0 {
@@ -283,6 +297,9 @@ func cmdPaid(args []string) error {
 		on := paidOn
 		if *onDue {
 			on = mo.due
+		}
+		if on.Before(p) {
+			return exitError{2, fmt.Errorf("%s: paid on %s, before the month began", p.Format("2006-01"), on.Format(time.DateOnly))}
 		}
 		due := map[string]amount{"social": mo.social, "health": mo.health, "fpfs": mo.fpfs, "ryczalt": mo.ryczalt}
 		kinds := []string{kind}
@@ -299,7 +316,8 @@ func cmdPaid(args []string) error {
 					if kind == "" && k == "ryczalt" && !mo.invoiced {
 						continue // ZUS only for a month not yet invoiced
 					}
-					return fmt.Errorf("%s %s: the amount due is not known; give AMOUNT", p.Format("2006-01"), k)
+					return fmt.Errorf("%s %s: the amount due is not known yet; record it with: ryczalt paid %s %s AMOUNT",
+						p.Format("2006-01"), k, p.Format("2006-01"), k)
 				}
 				g = due[k].grosze
 			}
@@ -307,13 +325,19 @@ func cmdPaid(args []string) error {
 				continue // e.g. FP/FS outside the full phase
 			}
 			if _, _, ok := paidFor(ps, p, k); ok && override < 0 {
-				return fmt.Errorf("%s %s is already recorded; see ryczalt paid --list, "+
-					"void it first, or give AMOUNT for a further payment", p.Format("2006-01"), k)
+				already = append(already, p.Format("2006-01")+" "+k)
+				continue
 			}
 			rows = append(rows, payment{id: newPaymentID(on), paidOn: on, period: p, kind: k, grosze: g})
 		}
 	}
+	if len(already) > 0 {
+		fmt.Printf("%s already recorded, left as is: %s\n", tag(os.Stdout, cyan, "INFO"), strings.Join(already, ", "))
+	}
 	if len(rows) == 0 {
+		if len(already) > 0 {
+			return errors.New("nothing new to record; a further payment needs a KIND and an AMOUNT")
+		}
 		return errors.New("nothing to record")
 	}
 	files := map[string]bool{}
@@ -335,7 +359,7 @@ func cmdPaid(args []string) error {
 func listPayments(ps []payment, args []string) error {
 	year := todayWarsaw().Year()
 	if len(args) == 1 && yearArg.MatchString(args[0]) {
-		fmt.Sscan(args[0], &year)
+		year, _ = strconv.Atoi(args[0]) // four digits, checked
 	} else if len(args) > 0 {
 		return exitError{2, errors.New(paidUsage)}
 	}
@@ -352,7 +376,8 @@ func listPayments(ps []payment, args []string) error {
 		fmt.Printf("No payments recorded for %d.\n", year)
 		return nil
 	}
-	printTable(os.Stdout, rows, []bool{false, false, false, false, true}, func(r, col int) string {
+	w := newReport(os.Stdout)
+	printTable(w, rows, []bool{false, false, false, false, true}, func(r, col int) string {
 		if r == 0 {
 			return bold
 		}
@@ -361,7 +386,7 @@ func listPayments(ps []payment, args []string) error {
 		}
 		return ""
 	})
-	return nil
+	return w.flush()
 }
 
 func cmdVoid(args []string) error {
@@ -406,3 +431,24 @@ func todayWarsaw() time.Time {
 }
 
 func cacheDir() string { return xdgPath("XDG_CACHE_HOME", ".cache", "ryczalt") }
+
+var amountArg = regexp.MustCompile(`^\d{1,9}([.,]\d{1,2})?$`)
+
+// parseAmount reads an amount typed by a person, like 1758, 830.58 or
+// 830,58, in grosze; anything else, including 1e3 or 1/3, is -1.
+func parseAmount(s string) int64 {
+	if !amountArg.MatchString(s) {
+		return -1
+	}
+	r, _ := new(big.Rat).SetString(strings.Replace(s, ",", ".", 1))
+	return grosze(r)
+}
+
+// safeHost is the hostname as it goes into a payments file name.
+func safeHost(host string) string {
+	host = regexp.MustCompile(`[^A-Za-z0-9-]`).ReplaceAllString(host, "-")
+	if host == "" {
+		return "local"
+	}
+	return host
+}

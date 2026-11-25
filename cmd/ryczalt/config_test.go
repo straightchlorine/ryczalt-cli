@@ -20,6 +20,9 @@ revenue_basis=period_end   # confirmed
 ulga_until=2025-12
 preferential_until=2027-12
 chorobowa=yes
+[client]
+payment_days=7
+calendar=PL
 `
 
 func TestParseConfig(t *testing.T) {
@@ -36,6 +39,8 @@ func TestParseConfig(t *testing.T) {
 		ulgaUntil:         time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
 		preferentialUntil: time.Date(2027, 12, 1, 0, 0, 0, 0, time.UTC),
 		chorobowa:         true,
+		paymentDays:       7,
+		clientCalendar:    "PL",
 	}
 	if c != want {
 		t.Errorf("got %+v\nwant %+v", c, want)
@@ -61,6 +66,8 @@ func TestParseConfigErrors(t *testing.T) {
 		{"bad NIP", "nip=5260250274", "nip=526-025-02-74", "tax.nip: \"526-025-02-74\" is not a valid NIP", false},
 		{"bad NIP check digit", "nip=5260250274", "nip=5260250275", "is not a valid NIP", false},
 		{"rate not in the act", "rate=12", "rate=13", `tax.rate: "13" is not one of 17 | 15`, false},
+		{"client calendar", "calendar=PL", "calendar=DE", `client.calendar: "DE" is not PL or DE-<state>`, false},
+		{"payment days", "payment_days=7", "payment_days=week", `client.payment_days: "week" is not a number`, false},
 		{"other tax form", "form=ryczalt", "form=liniowy", "tax.form=liniowy, only ryczalt is supported", true},
 		{"active VAT", "vat_status=exempt", "vat_status=active", "only exempt is supported", true},
 	}

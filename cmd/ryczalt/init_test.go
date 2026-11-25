@@ -22,11 +22,11 @@ func TestConfigExampleIsTemplate(t *testing.T) {
 func TestInit(t *testing.T) {
 	dir := t.TempDir()
 	ksef := filepath.Join(dir, "ksef.conf")
-	os.WriteFile(ksef, []byte("env=prod\nnip = \"5260250274\"  # mine\nksef_token=\n"), 0o600)
+	mustWrite(t, ksef, []byte("env=prod\nnip = \"5260250274\"  # mine\nksef_token=\n"))
 	t.Setenv("KSEF_CONFIG", ksef)
 	stdout := os.Stdout
-	os.Stdout, _ = os.Open(os.DevNull)
-	t.Cleanup(func() { os.Stdout.Close(); os.Stdout = stdout })
+	os.Stdout, _ = os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	t.Cleanup(func() { _ = os.Stdout.Close(); os.Stdout = stdout })
 	path := filepath.Join(dir, "sub", "ryczalt.conf")
 
 	if err := cmdInit([]string{"-c", path, "/srv/invoices"}); err != nil {
@@ -44,7 +44,7 @@ func TestInit(t *testing.T) {
 	}
 	// what is left blank is exactly what the user has to fill in
 	_, err = parseConfig(strings.NewReader(string(b)))
-	want := "tax.business_start: required\ntax.revenue_basis: required\nzus.chorobowa: required"
+	want := "tax.business_start: required\ntax.revenue_basis: required\nzus.chorobowa: required\nclient.calendar: required"
 	if err == nil || err.Error() != want {
 		t.Errorf("fresh config: got %v, want\n%s", err, want)
 	}
@@ -64,5 +64,19 @@ func TestInit(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(other); !strings.Contains(string(b), "nip=\n") {
 		t.Error("want a blank nip without ksef.conf")
+	}
+}
+
+func TestInitQuotesArchive(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("KSEF_CONFIG", filepath.Join(dir, "none.conf"))
+	path := filepath.Join(dir, "r.conf")
+	if _, err := run(t, cmdInit, "-c", path, "/path with spaces/in # it"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	_, err := parseConfig(strings.NewReader(string(b)))
+	if c, _ := parseConfig(strings.NewReader(string(b))); c.archive != "/path with spaces/in # it" {
+		t.Errorf("archive read back as %q (%v)", c.archive, err)
 	}
 }

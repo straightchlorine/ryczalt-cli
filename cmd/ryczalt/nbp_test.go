@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,7 +15,7 @@ func fakeNBP(t *testing.T, calls *[]string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*calls = append(*calls, r.URL.Path)
-		w.Write([]byte(`{"table":"A","currency":"euro","code":"EUR","rates":[
+		_, _ = w.Write([]byte(`{"table":"A","currency":"euro","code":"EUR","rates":[
 			{"no":"210/A/NBP/2026","effectiveDate":"2026-10-28","mid":4.2501},
 			{"no":"211/A/NBP/2026","effectiveDate":"2026-10-29","mid":4.2512},
 			{"no":"212/A/NBP/2026","effectiveDate":"2026-10-30","mid":4.3955}]}`))
@@ -110,5 +111,44 @@ func TestPitRateRejectsBadData(t *testing.T) {
 	}
 	if _, err := pitRate("../x", revenue, cache); err == nil {
 		t.Error("want an error for a currency that is not a code")
+	}
+}
+
+// Revenue on Monday 5 October 2026 takes Friday 2 October's table, which
+// NBP publishes around noon that Friday.
+func TestPitRatePublication(t *testing.T) {
+	published := "2026-10-02"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"rates":[{"no":"190/A/NBP/2026","effectiveDate":"` + published + `","mid":4.27}]}`))
+	}))
+	old, oldClock := nbpURL, clock
+	nbpURL = srv.URL
+	t.Cleanup(func() { nbpURL, clock = old, oldClock; srv.Close() })
+	at := func(s string) {
+		clock = func() time.Time { v, _ := time.ParseInLocation("2006-01-02 15:04", s, warsaw); return v }
+	}
+	revenue := day(t, "2026-10-05")
+
+	at("2026-10-02 10:00")
+	if _, err := pitRate("EUR", revenue, t.TempDir()); err == nil || !strings.Contains(err.Error(), "table of Fri 2026-10-02") {
+		t.Errorf("Friday morning: %v", err)
+	}
+	// after noon, but NBP still answers with Thursday's table: not cached
+	cache := t.TempDir()
+	at("2026-10-02 12:30")
+	published = "2026-10-01"
+	if _, err := pitRate("EUR", revenue, cache); err == nil {
+		t.Error("an older table while Friday's is due must not be used")
+	}
+	published = "2026-10-02"
+	at("2026-10-03 09:00") // Saturday: Friday's table is out
+	if r, err := pitRate("EUR", revenue, cache); err != nil || r.Date != "2026-10-02" {
+		t.Errorf("Saturday: %+v %v", r, err)
+	}
+	// a long-past day NBP skipped: the table before it is the right one
+	at("2026-11-25 09:00")
+	published = "2026-10-01"
+	if r, err := pitRate("EUR", revenue, t.TempDir()); err != nil || r.Date != "2026-10-01" {
+		t.Errorf("weeks later: %+v %v", r, err)
 	}
 }

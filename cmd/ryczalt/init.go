@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -54,6 +55,18 @@ preferential_until=
 # yes if you pay the voluntary sickness insurance (ubezpieczenie
 # chorobowe), no if you pay only the obligatory contributions.
 chorobowa=
+
+[client]   # kontrahent
+# Days the client has to pay, counted from the day after the invoice is
+# submitted. A deadline on a weekend or holiday moves to the next working
+# day (KC art. 115, BGB § 193).
+payment_days=7
+
+# Whose holidays move that deadline, by the law the contract is under:
+# PL for Polish law, DE-<state> for German law (the client's state, e.g.
+# DE-BY for Bavaria).
+# Fixed days only the client's town keeps can be added: e.g. DE-BY +08-08 for Augsburg.
+calendar=
 `
 
 // ksefConfigPath is where ksef-cli keeps its config: $KSEF_CONFIG, else
@@ -67,12 +80,11 @@ func ksefConfigPath() string {
 
 // nipFromKsef reads nip= from ksef-cli's config, if it has a valid one.
 func nipFromKsef(path string) string {
-	f, err := os.Open(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
 		k, v, ok := strings.Cut(strings.TrimSpace(sc.Text()), "=")
 		if ok && strings.TrimSpace(k) == "nip" && validNIP(parseValue(v)) {
@@ -99,7 +111,10 @@ func cmdInit(args []string) error {
 		return exitError{2, errors.New("usage: ryczalt init [-c CONFIG] [ARCHIVE]")}
 	}
 	if !filepath.IsAbs(expandHome(archive)) {
-		return exitError{2, fmt.Errorf("archive %q must be an absolute path or start with ~/", archive)}
+		return exitError{
+			2,
+			fmt.Errorf("archive %q must be an absolute path or start with ~/", archive),
+		}
 	}
 
 	ksef := ksefConfigPath()
@@ -115,26 +130,31 @@ func cmdInit(args []string) error {
 	if err != nil {
 		return err
 	}
+	if strings.ContainsAny(archive, " \t#\"'") {
+		archive = "'" + archive + "'" // the value is read the way the shell would
+	}
 	if _, err := fmt.Fprintf(f, confTemplate, archive, nip); err != nil {
-		f.Close()
+		_ = f.Close() // the write error is the one to report
 		return err
 	}
 	if err := f.Close(); err != nil {
 		return err
 	}
 
-	out := os.Stdout
-	fmt.Fprintf(out, "%s wrote %s\n", tag(out, green, "OK"), path)
-	todo := []string{"tax.business_start", "tax.revenue_basis", "zus.chorobowa",
-		"zus.ulga_until and zus.preferential_until, if you had them"}
+	out := newReport(os.Stdout)
+	out.printf("%s wrote %s\n", tag(out, green, "OK"), path)
+	todo := []string{
+		"tax.business_start", "tax.revenue_basis", "zus.chorobowa", "client.calendar",
+		"zus.ulga_until and zus.preferential_until, if you had them",
+	}
 	if nip != "" {
-		fmt.Fprintf(out, "%s nip taken from ksef-cli's %s\n", tag(out, cyan, "INFO"), ksef)
+		out.printf("%s nip taken from ksef-cli's %s\n", tag(out, cyan, "INFO"), ksef)
 	} else {
 		todo = append([]string{"tax.nip"}, todo...)
 	}
-	fmt.Fprintln(out, "  fill in, then run ryczalt status:")
+	out.println("  fill in, then run ryczalt status:")
 	for _, t := range todo {
-		fmt.Fprintln(out, "  -", t)
+		out.println("  -", t)
 	}
-	return nil
+	return out.flush()
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,6 +26,8 @@ type config struct {
 	ulgaUntil         time.Time // last month of ulga na start; zero = never had it
 	preferentialUntil time.Time // last month of preferential ZUS; zero = never had it
 	chorobowa         bool      // voluntary sickness insurance
+	paymentDays       int       // days the client has to pay
+	clientCalendar    string    // whose holidays move the client's deadline, see validCalendar
 }
 
 var configKeys = []string{
@@ -31,6 +35,7 @@ var configKeys = []string{
 	"tax.nip", "tax.form", "tax.payment", "tax.vat_status", "tax.business_start",
 	"tax.rate", "tax.revenue_basis",
 	"zus.ulga_until", "zus.preferential_until", "zus.chorobowa",
+	"client.payment_days", "client.calendar",
 }
 
 // errUnsupported marks a setup ryczalt does not handle; commands exit 3 on it.
@@ -148,6 +153,16 @@ func parseConfig(r io.Reader) (config, error) {
 		bad("zus.preferential_until", "must come after zus.ulga_until")
 	}
 	c.chorobowa = oneOf("zus.chorobowa", "yes", "no") == "yes"
+	if v := required("client.payment_days"); v != "" {
+		if n, err := strconv.Atoi(v); err != nil || n < 0 || n > 365 {
+			bad("client.payment_days", fmt.Sprintf("%q is not a number of days", v))
+		} else {
+			c.paymentDays = n
+		}
+	}
+	if c.clientCalendar = strings.Join(strings.Fields(required("client.calendar")), " "); c.clientCalendar != "" && !validCalendar(c.clientCalendar) {
+		bad("client.calendar", fmt.Sprintf("%q is not PL or DE-<state> (e.g. DE-BY), with optional +MM-DD days", c.clientCalendar))
+	}
 
 	return c, errors.Join(errs...)
 }
@@ -220,18 +235,20 @@ func configPath(flag string) string {
 
 func loadConfig(flag string) (config, error) {
 	path := configPath(flag)
-	f, err := os.Open(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return config{}, exitError{2, fmt.Errorf("%w; start from ryczalt.conf.example", err)}
 	}
-	defer f.Close()
-	c, err := parseConfig(f)
+	c, err := parseConfig(bytes.NewReader(b))
 	if err != nil {
 		code := 2
 		if errors.Is(err, errUnsupported) {
 			code = 3
 		}
 		return c, exitError{code, fmt.Errorf("%s:\n%w", path, err)}
+	}
+	if st, err := os.Stat(c.archive); err != nil || !st.IsDir() {
+		return c, exitError{2, fmt.Errorf("%s: archive %s is not a folder", path, c.archive)}
 	}
 	return c, nil
 }

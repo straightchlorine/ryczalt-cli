@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-var nbpURL = "https://api.nbp.pl/api/exchangerates/rates/a"
+var (
+	nbpURL = "https://api.nbp.pl/api/exchangerates/rates/a"
+	clock  = time.Now // tests set the time of day the publication check sees
+)
 
 // nbpRate is a mid rate from an NBP table A.
 type nbpRate struct {
@@ -44,17 +47,19 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 		return nbpRate{}, fmt.Errorf("currency %q is not a three-letter code", currency)
 	}
 	before := revenue.AddDate(0, 0, -1)
-	// today's table may not be out yet, and an answer that can still change
-	// must not be cached
-	y, m, d := time.Now().In(warsaw).Date()
-	if !before.Before(time.Date(y, m, d, 0, 0, 0, 0, time.UTC)) {
-		table := before
-		for !isWorkingDay("PL", table) {
-			table = table.AddDate(0, 0, -1)
-		}
-		return nbpRate{}, fmt.Errorf("the %s rate for revenue on %s comes from NBP's table of %s %s, "+
-			"published that day around noon; try again then", currency, revenue.Format(time.DateOnly),
-			table.Weekday().String()[:3], table.Format(time.DateOnly))
+	// the table that applies is the one of the last working day up to
+	// before; NBP publishes it around noon that day
+	table := before
+	for !isWorkingDay("PL", table) {
+		table = table.AddDate(0, 0, -1)
+	}
+	now := clock().In(warsaw)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	notYet := fmt.Errorf("the %s rate for revenue on %s comes from NBP's table of %s %s, "+
+		"published that day around noon; try again then", currency, revenue.Format(time.DateOnly),
+		table.Weekday().String()[:3], table.Format(time.DateOnly))
+	if table.After(today) || table.Equal(today) && now.Hour() < 12 {
+		return nbpRate{}, notYet
 	}
 	cache := filepath.Join(
 		cacheDir,
@@ -82,7 +87,7 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 	if err != nil {
 		return nbpRate{}, fmt.Errorf("NBP rate lookup: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // read only; nothing to lose
 	if resp.StatusCode != http.StatusOK {
 		return nbpRate{}, fmt.Errorf("NBP rate lookup: %s for %s", resp.Status, u)
 	}
@@ -107,10 +112,16 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 	if !r.valid(before) {
 		return nbpRate{}, fmt.Errorf("NBP sent an unusable rate: %+v", r)
 	}
+	// an older table while the right one is days old at most means it is
+	// not out yet (or NBP is late): never cache that. An older table for a
+	// day long past is right: NBP did not publish on that day.
+	if published, _ := time.Parse(time.DateOnly, r.Date); published.Before(table) && today.Sub(table) < 4*24*time.Hour {
+		return nbpRate{}, notYet
+	}
 
 	b, _ = json.Marshal(r)
 	if err := os.MkdirAll(filepath.Dir(cache), 0o700); err == nil {
-		os.WriteFile(cache, b, 0o600) // a failed write only costs a lookup next time
+		_ = os.WriteFile(cache, b, 0o600) // a failed write only costs a lookup next time
 	}
 	return r, nil
 }

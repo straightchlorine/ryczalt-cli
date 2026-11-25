@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -14,20 +16,46 @@ const (
 	red, green, yellow, cyan = "31", "32", "33", "36"
 )
 
-func isTerminal(w *os.File) bool {
-	st, err := w.Stat()
+// report collects output and writes it in one go, so a failed write (a
+// closed pipe, a full disk) is returned once instead of lost line by line.
+type report struct {
+	out *os.File // where it goes; also decides colours
+	b   strings.Builder
+}
+
+func newReport(f *os.File) *report { return &report{out: f} }
+
+func (r *report) Write(p []byte) (int, error)    { return r.b.Write(p) }
+func (r *report) printf(format string, a ...any) { fmt.Fprintf(&r.b, format, a...) }
+func (r *report) println(a ...any)               { fmt.Fprintln(&r.b, a...) }
+
+func (r *report) flush() error {
+	_, err := r.out.WriteString(r.b.String())
+	r.b.Reset()
+	return err
+}
+
+func isTerminal(w io.Writer) bool {
+	if r, ok := w.(*report); ok {
+		w = r.out
+	}
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	st, err := f.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
 
 // colours says whether w is a terminal that takes ANSI codes.
 // NO_COLOR and TERM=dumb switch them off.
-func colours(w *os.File) bool {
+func colours(w io.Writer) bool {
 	return isTerminal(w) && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb" &&
 		// the old Windows console prints the codes instead of colours
 		(runtime.GOOS != "windows" || os.Getenv("WT_SESSION") != "")
 }
 
-func paint(w *os.File, colour, s string) string {
+func paint(w io.Writer, colour, s string) string {
 	if !colours(w) {
 		return s
 	}
@@ -35,7 +63,7 @@ func paint(w *os.File, colour, s string) string {
 }
 
 // tag is a status tag of fixed width: [  OK  ], [ WARN ], [ FAIL ], [ INFO ].
-func tag(w *os.File, colour, word string) string {
+func tag(w io.Writer, colour, word string) string {
 	pad := max(0, 6-len(word))
 	return paint(w, colour, "["+strings.Repeat(" ", pad/2)+word+strings.Repeat(" ", pad-pad/2)+"]")
 }
@@ -44,7 +72,7 @@ func tag(w *os.File, colour, word string) string {
 // right names the columns of numbers, and colour paints a finished cell
 // (padding first, so codes never upset the alignment). Copied from
 // ksef-cli (cmd/ksef/output.go), with several number columns.
-func printTable(w *os.File, rows [][]string, right []bool, colour func(row, col int) string) {
+func printTable(w *report, rows [][]string, right []bool, colour func(row, col int) string) {
 	widths := make([]int, len(rows[0]))
 	for _, row := range rows {
 		for i, cell := range row {
@@ -65,16 +93,22 @@ func printTable(w *os.File, rows [][]string, right []bool, colour func(row, col 
 			}
 			cells[i] = cell
 		}
-		fmt.Fprintln(w, strings.TrimRight(strings.Join(cells, "  "), " "))
+		w.println(strings.TrimRight(strings.Join(cells, "  "), " "))
 	}
 }
 
 // parseFlags is flags.Parse that also takes flags after the arguments,
 // as in "ryczalt paid 2026-10 --on 2026-11-18"; "--" ends the flags.
 func parseFlags(flags *flag.FlagSet, args []string) error {
+	// flag errors are printed once, by main; help goes to stderr
+	flags.SetOutput(io.Discard)
 	var positional []string
 	for {
 		if err := flags.Parse(args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				flags.SetOutput(os.Stderr)
+				flags.Usage()
+			}
 			return err
 		}
 		args = flags.Args()

@@ -14,10 +14,23 @@ var deStates = []string{
 }
 
 // validCalendar reports whether cal names a holiday calendar: "PL", or
-// "DE-" plus a state, e.g. "DE-BY".
+// "DE-" plus a state, e.g. "DE-BY", optionally followed by fixed days a
+// town keeps on top, e.g. "DE-BY +08-08" for Augsburg's Friedensfest.
 func validCalendar(cal string) bool {
-	state, ok := strings.CutPrefix(cal, "DE-")
-	return cal == "PL" || ok && slices.Contains(deStates, state)
+	f := strings.Fields(cal)
+	if len(f) == 0 {
+		return false
+	}
+	state, ok := strings.CutPrefix(f[0], "DE-")
+	if f[0] != "PL" && (!ok || !slices.Contains(deStates, state)) {
+		return false
+	}
+	for _, extra := range f[1:] {
+		if _, err := time.Parse("+01-02", extra); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // easter returns Easter Sunday of the Gregorian calendar, as midnight UTC.
@@ -42,10 +55,14 @@ func isHoliday(cal string, t time.Time) bool {
 	if !validCalendar(cal) {
 		panic(fmt.Sprintf("isHoliday: unknown calendar %q", cal))
 	}
-	if cal == "PL" {
+	f := strings.Fields(cal)
+	if slices.Contains(f[1:], t.Format("+01-02")) {
+		return true
+	}
+	if f[0] == "PL" {
 		return isHolidayPL(t)
 	}
-	return isHolidayDE(strings.TrimPrefix(cal, "DE-"), t)
+	return isHolidayDE(strings.TrimPrefix(f[0], "DE-"), t)
 }
 
 // isHolidayPL - holiday days of Poland (from the ustawa o dniach wolnych od pracy)
@@ -72,8 +89,10 @@ func isHolidayPL(t time.Time) bool {
 	return false
 }
 
-// isHolidayDE covers the holidays a whole state keeps and adds on top of it
-// holidays kept only in some lands.
+// isHolidayDE covers the holidays a state keeps in most of its
+// municipalities. Bavaria's Mariä Himmelfahrt counts: it is a holiday in
+// the Catholic-majority ones (about 1700 of 2056, Munich among them).
+// NOTE: holidays only a minority keeps are left to +MM-DD in the calendar;
 func isHolidayDE(state string, t time.Time) bool {
 	y, m, d := t.Date()
 	in := func(states string) bool { return slices.Contains(strings.Fields(states), state) }
@@ -97,7 +116,7 @@ func isHolidayDE(state string, t time.Time) bool {
 	case m == time.March && d == 8: // Internationaler Frauentag
 		return in("BE") && y >= 2019 || in("MV") && y >= 2023
 	case m == time.August && d == 15: // Mariä Himmelfahrt
-		return in("SL")
+		return in("SL BY")
 	case m == time.September && d == 20: // Weltkindertag
 		return in("TH") && y >= 2019
 	case m == time.October && d == 31: // Reformationstag

@@ -193,10 +193,6 @@ func TestReadArchiveErrors(t *testing.T) {
 		"VAT charged": {map[string]string{
 			"2026-06/v.xml": faFrom(testNIP, "INV-V", "2026-06-01", "2026-05-31", "<P_14_1>23.00</P_14_1>"),
 		}, "invoice INV-V charges VAT (P_14_1)"},
-		"truncated invoice": {map[string]string{"2026-06/t.xml": "<Faktura><Fa>"}, "2026-06/t.xml: XML syntax error"},
-		"invoice not in UTF-8": {map[string]string{
-			"2026-06/l.xml": `<?xml version="1.0" encoding="ISO-8859-2"?><Faktura><Fa/></Faktura>`,
-		}, "2026-06/l.xml: xml: encoding"},
 		"no currency": {map[string]string{
 			"2026-06/c.xml": strings.Replace(fa("INV-C", "2026-06-01", "2026-05-31"), "EUR", "", 1),
 		}, "without a readable"},
@@ -216,5 +212,30 @@ func TestReadArchiveErrors(t *testing.T) {
 	})
 	if got, _, err := readArchive(root, testNIP); err != nil || len(got) != 2 {
 		t.Errorf("got %d invoices, %v", len(got), err)
+	}
+}
+
+// Half-written files are skipped with a warning (a copy still syncing);
+// anything another seller issued is skipped whatever it holds.
+func TestReadArchiveSkips(t *testing.T) {
+	theirs := faFrom("1234563218", "P-1", "2026-06-01", "2026-05-31", "<P_14_1>230.00</P_14_1>")
+	root := writeArchive(t, map[string]string{
+		"2026-06/t.xml":        "<Faktura><Fa>",
+		"2026-06/l.xml":        `<?xml version="1.0" encoding="ISO-8859-2"?><Faktura><Fa/></Faktura>`,
+		"2026-06/vat.xml":      theirs,
+		"2026-06/kor.xml":      strings.Replace(faFrom("1234563218", "P-2", "2026-06-01", "2026-05-31", ""), ">VAT<", ">KOR<", 1),
+		"2026-06/mine.xml":     fa("INV-06", "2026-06-01", "2026-05-31"),
+		"2026-06/nothing.json": "{}",
+	})
+	got, found, err := readArchive(root, testNIP)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %d invoices, %v", len(got), err)
+	}
+	text := findingsText(found)
+	for _, want := range []string{"warn archive 2026-06/l.xml: not readable XML", "warn archive 2026-06/t.xml: not readable XML",
+		"info archive 2026-06/kor.xml: invoice P-2 was issued by NIP 1234563218", "info archive 2026-06/vat.xml: invoice P-1 was issued by NIP 1234563218"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in\n%s", want, text)
+		}
 	}
 }

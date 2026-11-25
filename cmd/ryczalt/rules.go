@@ -196,18 +196,19 @@ func cmdRules(args []string) error {
 		return nil
 	case len(args) == 1:
 		if !yearArg.MatchString(args[0]) {
-			return fmt.Errorf("rules takes a year like 2026, got %q", args[0])
+			return exitError{2, fmt.Errorf("rules takes a year like 2026, got %q", args[0])}
 		}
 		year, _ = strconv.Atoi(args[0])
 	case len(args) > 1:
-		return errors.New("usage: ryczalt rules [YEAR]")
+		return exitError{2, errors.New("usage: ryczalt rules [YEAR]")}
 	}
-	printRules(os.Stdout, year)
-	return nil
+	w := newReport(os.Stdout)
+	printRules(w, year)
+	return w.flush()
 }
 
-func printRules(w *os.File, year int) {
-	fmt.Fprintf(w, "Rules for %d, in PLN\n", year)
+func printRules(w *report, year int) {
+	w.printf("Rules for %d, in PLN\n", year)
 	var unknowns []string
 	hasForecast := false
 	for _, k := range ruleKeys {
@@ -220,21 +221,16 @@ func printRules(w *os.File, year int) {
 		if st == unknown {
 			unknowns = append(unknowns, k[1])
 		}
-		fmt.Fprintln(
-			w,
-			strings.TrimRight(
-				fmt.Sprintf("  %-36s %10s  %-8s  %s", k[1], val, st, rules[year][k[0]].source),
-				" ",
-			),
+		w.println(strings.TrimRight(
+			fmt.Sprintf("  %-36s %10s  %-8s  %s", k[1], val, st, rules[year][k[0]].source),
+			" ",
+		),
 		)
 	}
 
-	fmt.Fprintln(w, "\nMonthly contributions")
+	w.println("\nMonthly contributions")
 	row := func(label string, a amount, note string) {
-		fmt.Fprintln(
-			w,
-			strings.TrimRight(fmt.Sprintf("  %-36s %10s  %s", label, plnText(a), note), " "),
-		)
+		w.println(strings.TrimRight(fmt.Sprintf("  %-36s %10s  %s", label, plnText(a), note), " "))
 	}
 	row("health, yearly revenue up to 60 000", healthMonthly(year, 0), "")
 	row("health, up to 300 000", healthMonthly(year, 1), "")
@@ -254,18 +250,14 @@ func printRules(w *os.File, year int) {
 	row("FP/FS, full phase only", fpfs, "")
 
 	for _, u := range unknowns {
-		fmt.Fprintf(
-			w,
-			"%s no %d figure for %s; what depends on it shows n/a\n",
+		w.printf("%s no %d figure for %s; what depends on it shows n/a\n",
 			tag(w, yellow, "WARN"),
 			year,
 			u,
 		)
 	}
 	if hasForecast {
-		fmt.Fprintf(
-			w,
-			"%s ~ marks an amount based on a forecast, not the official figure\n",
+		w.printf("%s ~ marks an amount based on a forecast, not the official figure\n",
 			tag(w, cyan, "INFO"),
 		)
 	}

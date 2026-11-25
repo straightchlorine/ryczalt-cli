@@ -17,7 +17,7 @@ func fakeNBPFlat(t *testing.T) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/") // eur/FROM/TO
-		json.NewEncoder(w).Encode(map[string]any{"rates": []map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{"rates": []map[string]any{
 			{"no": "001/A/NBP/2026", "effectiveDate": parts[2], "mid": 4.0},
 		}})
 	}))
@@ -73,7 +73,11 @@ func TestStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	failed := printStatus(out, c, 2026, today, months, nil)
+	r := newReport(out)
+	failed := printStatus(r, c, 2026, today, months, nil)
+	if err := r.flush(); err != nil {
+		t.Fatal(err)
+	}
 	b, _ := os.ReadFile(out.Name())
 
 	want := `ryczalt 2026

@@ -60,10 +60,13 @@ func TestReadPaymentsProblems(t *testing.T) {
 		"wrong head":  {"id,date\n", "first line must be"},
 		"short field": {head + "x,2026-11-18\n", "wrong number of fields"},
 	}
+	// a damaged file is left out with a warning; the other files still count
 	for name, c := range cases {
-		root := writeArchive(t, map[string]string{"2026/payments.box.csv": c.body})
-		if _, _, err := readPayments(root); err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s: got %v, want %q", name, err, c.want)
+		root := writeArchive(t, map[string]string{"2026/payments.box.csv": c.body,
+			"2026/payments.other.csv": head + "y,2026-11-18,2026-10,social,5,\n"})
+		ps, warns, err := readPayments(root)
+		if err != nil || len(ps) != 1 || len(warns) != 1 || !strings.Contains(warns[0], c.want) {
+			t.Errorf("%s: got %d payments, %q, %v; want a warning with %q", name, len(ps), warns, err, c.want)
 		}
 	}
 
@@ -105,12 +108,36 @@ func TestMonthStateWithPayments(t *testing.T) {
 		{"all paid on time", paid, "2026-11-25", "", "OK"},
 		{"ryczalt paid late", lateRycz, "2026-11-25", "late, 2026-11-24", "WARN"},
 		{"health missing", partial, "2026-11-21", "zus", "FAIL"},
-		{"zus paid early", zusOnly, "2026-11-19", "due in 1 days, zus paid", "WARN"},
+		{"zus paid early", zusOnly, "2026-11-19", "due tomorrow, zus paid", "WARN"},
 		{"all paid before due", paid, "2026-11-20", "", "OK"},
 	}
 	for _, c := range cases {
 		if text, level := monthState(c.m, day(t, c.today)); text != c.text || level != c.level {
 			t.Errorf("%s: got %q %q, want %q %q", c.name, text, level, c.text, c.level)
+		}
+	}
+}
+
+func TestAppendAfterOpenLastLine(t *testing.T) {
+	root := writeArchive(t, map[string]string{"2026/payments.box.csv": paymentsHeader + "\na,2026-11-18,2026-10,social,420.86,"})
+	host, _ := os.Hostname()
+	if err := os.Rename(filepath.Join(root, "2026", "payments.box.csv"), filepath.Join(root, "2026", "payments."+safeHost(host)+".csv")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := appendPayments(root, []payment{{id: "b", paidOn: day(t, "2026-11-18"), period: day(t, "2026-10-01"), kind: "health", grosze: 83058}}); err != nil {
+		t.Fatal(err)
+	}
+	ps, warns, err := readPayments(root)
+	if err != nil || len(warns) > 0 || len(ps) != 2 {
+		t.Errorf("got %d payments, %q, %v", len(ps), warns, err)
+	}
+}
+
+func TestParseAmount(t *testing.T) {
+	for in, want := range map[string]int64{"1758": 175800, "830.58": 83058, "830,58": 83058, "0.5": 50, "0": 0,
+		"1e3": -1, "1/3": -1, "0x10": -1, "1_000": -1, "-5": -1, "12.345": -1, "9999999999": -1, "": -1} {
+		if got := parseAmount(in); got != want {
+			t.Errorf("parseAmount(%q) = %d, want %d", in, got, want)
 		}
 	}
 }
