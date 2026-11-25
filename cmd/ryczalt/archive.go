@@ -327,55 +327,30 @@ func readFA(b []byte) (invoice, string, error) {
 	fa := f.Fa
 	number := strings.TrimSpace(fa.P2)
 	seller := strings.TrimSpace(f.Seller)
+	partial := invoice{number: number} // enough to name it in an error
 	if kind := strings.TrimSpace(fa.Kind); kind != "VAT" {
-		return invoice{
-			number: number,
-		}, seller, fmt.Errorf(
-			"invoice %s is of kind %q; only VAT (a plain invoice) is supported, "+
-				"corrections and advance invoices are not yet",
-			number,
-			kind,
-		)
+		return partial, seller, fmt.Errorf("invoice %s is of kind %q; only VAT (a plain invoice) "+
+			"is supported, corrections and advance invoices are not yet", number, kind)
 	}
 	for _, o := range fa.Other {
 		if strings.HasPrefix(o.XMLName.Local, "P_14_") {
 			if v, ok := new(big.Rat).SetString(strings.TrimSpace(o.Value)); !ok || v.Sign() != 0 {
-				return invoice{
-					number: number,
-				}, seller, fmt.Errorf(
-					"invoice %s charges VAT (%s), but ryczalt handles VAT-exempt sellers only",
-					number,
-					o.XMLName.Local,
-				)
+				return partial, seller, fmt.Errorf("invoice %s charges VAT (%s), but ryczalt "+
+					"handles VAT-exempt sellers only", number, o.XMLName.Local)
 			}
 		}
 	}
-	end := cmp.Or(
-		strings.TrimSpace(fa.P6Do),
-		strings.TrimSpace(fa.P6),
-		strings.TrimSpace(fa.P1),
-	) // no separate service date: the issue date is the service date
+	end := cmp.Or(strings.TrimSpace(fa.P6Do), strings.TrimSpace(fa.P6),
+		strings.TrimSpace(fa.P1)) // no separate service date: the issue date is the service date
 	issued, err1 := time.Parse(time.DateOnly, strings.TrimSpace(fa.P1))
 	serviceEnd, err2 := time.Parse(time.DateOnly, end)
 	total, ok := new(big.Rat).SetString(strings.TrimSpace(fa.P15))
 	currency := strings.ToUpper(strings.TrimSpace(fa.Currency))
 	if number == "" || err1 != nil || err2 != nil || !ok || !currencyCode.MatchString(currency) {
-		return invoice{
-			number: number,
-		}, seller, fmt.Errorf(
-			"FA(3) without a readable P_1, P_2, P_6, P_15 or KodWaluty",
-		)
+		return partial, seller, errors.New("FA(3) without a readable P_1, P_2, P_6, P_15 or KodWaluty")
 	}
-	return invoice{
-			number:     number,
-			issued:     issued,
-			serviceEnd: serviceEnd,
-			currency:   currency,
-			total:      total,
-		},
-		strings.TrimSpace(
-			f.Seller,
-		), nil
+	inv := invoice{number: number, issued: issued, serviceEnd: serviceEnd, currency: currency, total: total}
+	return inv, seller, nil
 }
 
 // readInvoify reads an Invoify export. It has no service date, so the
