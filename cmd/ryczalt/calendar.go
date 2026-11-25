@@ -89,10 +89,10 @@ func isHolidayPL(t time.Time) bool {
 	return false
 }
 
-// isHolidayDE covers the holidays a state keeps in most of its
-// municipalities. Bavaria's Mariä Himmelfahrt counts: it is a holiday in
-// the Catholic-majority ones (about 1700 of 2056, Munich among them).
-// NOTE: holidays only a minority keeps are left to +MM-DD in the calendar;
+// isHolidayDE covers the holidays a whole state keeps. Those only some of
+// its municipalities keep are left to +MM-DD in the calendar: Mariä
+// Himmelfahrt in Catholic-majority Bavaria (DE-BY +08-15, e.g. Munich),
+// Fronleichnam in parts of Saxony and Thuringia, the Augsburger Friedensfest.
 func isHolidayDE(state string, t time.Time) bool {
 	y, m, d := t.Date()
 	in := func(states string) bool { return slices.Contains(strings.Fields(states), state) }
@@ -116,7 +116,7 @@ func isHolidayDE(state string, t time.Time) bool {
 	case m == time.March && d == 8: // Internationaler Frauentag
 		return in("BE") && y >= 2019 || in("MV") && y >= 2023
 	case m == time.August && d == 15: // Mariä Himmelfahrt
-		return in("SL BY")
+		return in("SL")
 	case m == time.September && d == 20: // Weltkindertag
 		return in("TH") && y >= 2019
 	case m == time.October && d == 31: // Reformationstag

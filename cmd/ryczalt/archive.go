@@ -39,6 +39,21 @@ type invoice struct {
 	total      *big.Rat  // P_15; with no VAT (checked) it is also the net revenue
 	ksefNumber string    // from the UPO or .ksef/meta.json; "" if never sent
 	ksefMode   string    // TrybWysylki from the UPO: Online or Offline
+	buyerCode  string    // country of the buyer's tax id, e.g. DE; "" if unknown
+	buyerID    string    // the buyer's tax id without the country prefix; "" if none
+	buyerVAT   bool      // buyerID is a NIP or an EU VAT number, not some other id (NrID)
+}
+
+// buyerText is the buyer's id as people write it: DE123456789 for a VAT
+// number, "DE HRB 12345" for another kind of id.
+func (inv invoice) buyerText() string {
+	switch {
+	case inv.buyerID == "":
+		return ""
+	case inv.buyerVAT || inv.buyerCode == "":
+		return inv.buyerCode + inv.buyerID
+	}
+	return inv.buyerCode + " " + inv.buyerID
 }
 
 var (
@@ -307,7 +322,10 @@ var errUnreadable = errors.New("not readable XML")
 func readFA(b []byte) (invoice, string, error) {
 	var f struct {
 		Seller string `xml:"Podmiot1>DaneIdentyfikacyjne>NIP"`
-		Fa     struct {
+		Buyer  struct {
+			NIP, KodUE, NrVatUE, KodKraju, NrID string
+		} `xml:"Podmiot2>DaneIdentyfikacyjne"`
+		Fa struct {
 			Kind     string `xml:"RodzajFaktury"`
 			P1       string `xml:"P_1"`
 			P2       string `xml:"P_2"`
@@ -347,9 +365,29 @@ func readFA(b []byte) (invoice, string, error) {
 	total, ok := new(big.Rat).SetString(strings.TrimSpace(fa.P15))
 	currency := strings.ToUpper(strings.TrimSpace(fa.Currency))
 	if number == "" || err1 != nil || err2 != nil || !ok || !currencyCode.MatchString(currency) {
-		return partial, seller, errors.New("FA(3) without a readable P_1, P_2, P_6, P_15 or KodWaluty")
+		return partial, seller, errors.New(
+			"FA(3) without a readable P_1, P_2, P_6, P_15 or KodWaluty",
+		)
 	}
-	inv := invoice{number: number, issued: issued, serviceEnd: serviceEnd, currency: currency, total: total}
+	inv := invoice{
+		number:     number,
+		issued:     issued,
+		serviceEnd: serviceEnd,
+		currency:   currency,
+		total:      total,
+	}
+	switch b := f.Buyer; {
+	case strings.TrimSpace(b.NIP) != "":
+		inv.buyerCode, inv.buyerID, inv.buyerVAT = "PL", strings.TrimSpace(b.NIP), true
+	case strings.TrimSpace(b.NrVatUE) != "":
+		inv.buyerCode, inv.buyerID, inv.buyerVAT = vatToISO(
+			strings.TrimSpace(b.KodUE),
+		), strings.TrimSpace(
+			b.NrVatUE,
+		), true
+	case strings.TrimSpace(b.NrID) != "":
+		inv.buyerCode, inv.buyerID = strings.TrimSpace(b.KodKraju), strings.TrimSpace(b.NrID)
+	}
 	return inv, seller, nil
 }
 
@@ -358,6 +396,9 @@ func readFA(b []byte) (invoice, string, error) {
 // the earlier tools invoiced.
 func readInvoify(b []byte) (invoice, error) {
 	var j struct {
+		Receiver struct {
+			CustomInputs []struct{ Key, Value string }
+		}
 		Details struct {
 			InvoiceNumber string
 			InvoiceDate   string
@@ -383,13 +424,36 @@ func readInvoify(b []byte) (invoice, error) {
 	if !currencyCode.MatchString(currency) {
 		return invoice{}, fmt.Errorf("currency %q is not a three-letter code", d.Currency)
 	}
-	return invoice{
+	inv := invoice{
 		number:     number,
 		issued:     time.Date(y, m, day, 0, 0, 0, 0, time.UTC),
 		serviceEnd: time.Date(y, m, 0, 0, 0, 0, 0, time.UTC),
 		currency:   currency,
 		total:      total,
-	}, nil
+	}
+	// the buyer's VAT id, as the earlier invoices put it: a custom field
+	for _, in := range j.Receiver.CustomInputs {
+		k := strings.ToUpper(strings.TrimSpace(in.Key))
+		v := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(in.Value)), " ", "")
+		if (k == "VAT" || k == "NRVATUE" || k == "VAT ID" || k == "NIP") && v != "" {
+			if len(v) > 2 && v[0] >= 'A' && v[0] <= 'Z' && v[1] >= 'A' && v[1] <= 'Z' {
+				inv.buyerCode, inv.buyerID, inv.buyerVAT = vatToISO(v[:2]), v[2:], true
+			} else {
+				inv.buyerID = v
+			}
+			break
+		}
+	}
+	return inv, nil
+}
+
+// vatToISO turns an EU VAT prefix into the ISO country code: Greece is EL
+// in VAT numbers and GR elsewhere.
+func vatToISO(code string) string {
+	if code = strings.ToUpper(code); code == "EL" {
+		return "GR"
+	}
+	return code
 }
 
 // A finding is something about the archive worth telling: levelWarn may
@@ -443,6 +507,18 @@ func checkInvoices(invs []invoice) []finding {
 				},
 			)
 		}
+		if inv.buyerID != "" && !inv.buyerVAT && euVAT[inv.buyerCode] {
+			out = append(
+				out,
+				finding{
+					levelCheck,
+					"invoicing",
+					fmt.Sprintf("%s: the EU buyer is identified by %s, "+
+						"not by a VAT number; the revenue register needs a tax id, and EU B2B services the buyer's VAT number",
+						inv.number, inv.buyerText()),
+				},
+			)
+		}
 		end := inv.serviceEnd
 		by := shiftDeadline("PL", time.Date(end.Year(), end.Month()+1, 15, 0, 0, 0, 0, time.UTC))
 		if inv.issued.After(by) {
@@ -492,4 +568,12 @@ func printFindings(w *report, fs []finding, levels ...string) (warned bool) {
 		}
 	}
 	return warned
+}
+
+// euVAT are the EU member states, whose businesses carry a VAT number.
+var euVAT = map[string]bool{
+	"AT": true, "BE": true, "BG": true, "CY": true, "CZ": true, "DE": true, "DK": true,
+	"EE": true, "ES": true, "FI": true, "FR": true, "GR": true, "HR": true, "HU": true, "IE": true, "IT": true,
+	"LT": true, "LU": true, "LV": true, "MT": true, "NL": true, "PT": true, "RO": true, "SE": true, "SI": true,
+	"SK": true,
 }

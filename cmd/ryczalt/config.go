@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,6 +34,26 @@ type config struct {
 	r2Bucket          string    // off-site copy; "" = none
 	r2Profile         string
 	r2Endpoint        string
+	jpkFirstName      string // for JPK_EWP only
+	jpkSurname        string
+	jpkBirthDate      string
+	jpkTaxOffice      string // kod urzędu skarbowego, 4 digits
+	jpkEmail          string
+}
+
+// jpkMissing names the [jpk] keys a JPK_EWP file needs and lacks.
+func (c config) jpkMissing() []string {
+	var m []string
+	for k, v := range map[string]string{
+		"first_name": c.jpkFirstName, "surname": c.jpkSurname,
+		"birth_date": c.jpkBirthDate, "tax_office": c.jpkTaxOffice,
+	} {
+		if v == "" {
+			m = append(m, k)
+		}
+	}
+	slices.Sort(m)
+	return m
 }
 
 var configKeys = []string{
@@ -43,6 +64,7 @@ var configKeys = []string{
 	"client.payment_days", "client.calendar",
 	"ksef.bin", "ksef.config",
 	"r2.bucket", "r2.profile", "r2.endpoint",
+	"jpk.first_name", "jpk.surname", "jpk.birth_date", "jpk.tax_office", "jpk.email",
 }
 
 // errUnsupported marks a setup ryczalt does not handle; commands exit 3 on it.
@@ -167,12 +189,35 @@ func parseConfig(r io.Reader) (config, error) {
 			c.paymentDays = n
 		}
 	}
-	if c.clientCalendar = strings.Join(strings.Fields(required("client.calendar")), " "); c.clientCalendar != "" && !validCalendar(c.clientCalendar) {
-		bad("client.calendar", fmt.Sprintf("%q is not PL or DE-<state> (e.g. DE-BY), with optional +MM-DD days", c.clientCalendar))
+	if c.clientCalendar = strings.Join(strings.Fields(required("client.calendar")), " "); c.clientCalendar != "" &&
+		!validCalendar(c.clientCalendar) {
+		bad(
+			"client.calendar",
+			fmt.Sprintf(
+				"%q is not PL or DE-<state> (e.g. DE-BY), with optional +MM-DD days",
+				c.clientCalendar,
+			),
+		)
 	}
 	c.ksefBin = expandHome(vals["ksef.bin"])
 	c.ksefConfig = expandHome(vals["ksef.config"])
 	c.r2Bucket, c.r2Profile, c.r2Endpoint = vals["r2.bucket"], vals["r2.profile"], vals["r2.endpoint"]
+	c.jpkFirstName, c.jpkSurname, c.jpkEmail = vals["jpk.first_name"], vals["jpk.surname"], vals["jpk.email"]
+	if c.jpkBirthDate = vals["jpk.birth_date"]; c.jpkBirthDate != "" {
+		if _, err := time.Parse(time.DateOnly, c.jpkBirthDate); err != nil {
+			bad("jpk.birth_date", fmt.Sprintf("%q is not a date like 1990-05-17", c.jpkBirthDate))
+		}
+	}
+	if c.jpkTaxOffice = vals["jpk.tax_office"]; c.jpkTaxOffice != "" &&
+		!regexp.MustCompile(`^\d{4}$`).MatchString(c.jpkTaxOffice) {
+		bad(
+			"jpk.tax_office",
+			fmt.Sprintf(
+				"%q is not a 4-digit tax office code (kod urzedu skarbowego)",
+				c.jpkTaxOffice,
+			),
+		)
+	}
 	if c.r2Bucket == "" && (c.r2Profile != "" || c.r2Endpoint != "") {
 		bad("r2.bucket", "required when [r2] has a profile or an endpoint")
 	}
@@ -235,6 +280,7 @@ type exitError struct {
 }
 
 func (e exitError) Error() string { return e.err.Error() }
+
 func (e exitError) Unwrap() error { return e.err }
 
 // configPath is -c if given, else $RYCZALT_CONFIG, else

@@ -21,6 +21,7 @@ const usage = `Usage: ryczalt init [-c CONFIG] [ARCHIVE]
        ryczalt paid [-c CONFIG] --list [YEAR]
        ryczalt void [-c CONFIG] ID...
        ryczalt year [-c CONFIG] [YEAR]
+       ryczalt ewid [-c CONFIG] [--csv | --jpk [--correction]] [YEAR]
        ryczalt check [-c CONFIG]
        ryczalt rules [YEAR]
        ryczalt version
@@ -61,6 +62,9 @@ Subcommands:
               the health contributions paid that year, ryczalt, advances,
               what is left to pay or comes back) and the annual health
               settlement. Until May, last year.
+  ewid        The year's revenue register (ewidencja przychodów): a table, or
+              --csv with the register's 17 columns, or --jpk for the JPK_EWP(4)
+              file sent with PIT-28 (needs [jpk] in the config).
   check       Everything worth knowing about the archive, beyond what status
               shows: drafts that differ from what was sent, invoices without
               a KSeF number, invoices issued late, session keys left in clear
@@ -98,6 +102,8 @@ func main() {
 		err = cmdVoid(os.Args[2:])
 	case "year":
 		err = cmdYear(os.Args[2:])
+	case "ewid":
+		err = cmdEwid(os.Args[2:])
 	case "check":
 		err = cmdCheck(os.Args[2:])
 	case "rules":

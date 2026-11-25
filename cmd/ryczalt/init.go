@@ -65,7 +65,7 @@ payment_days=7
 # Whose holidays move that deadline, by the law the contract is under:
 # PL for Polish law, DE-<state> for German law (the client's state, e.g.
 # DE-BY for Bavaria).
-# Fixed days only the client's town keeps can be added: e.g. DE-BY +08-08 for Augsburg.
+# Add the days only the client's town keeps, e.g. DE-BY +08-15 for Munich.
 calendar=
 
 [ksef]   # how ryczalt send reaches ksef-cli; both optional
@@ -76,6 +76,13 @@ calendar=
 # bucket=                       # an S3 bucket, e.g. on Cloudflare R2
 # profile=                      # the aws CLI profile with its credentials
 # endpoint=                     # e.g. https://<account>.r2.cloudflarestorage.com
+
+[jpk]   # only for ryczalt ewid --jpk, the JPK_EWP file sent after the year
+# first_name=
+# surname=
+# birth_date=                   # YYYY-MM-DD
+# tax_office=                   # kod urzędu skarbowego, 4 digits, e.g. 1471
+# email=                        # optional
 `
 
 // ksefConfigPath is where ksef-cli keeps its config: $KSEF_CONFIG, else

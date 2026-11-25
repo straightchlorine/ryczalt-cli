@@ -73,7 +73,7 @@ func TestShiftDeadline(t *testing.T) {
 		{"DE-NW", "2026-06-04", "2026-06-05", "Fronleichnam in North Rhine-Westphalia"},
 		{"DE-SN", "2026-06-04", "2026-06-04", "Fronleichnam only in some Saxon towns"},
 		{"DE-SL", "2029-08-15", "2029-08-16", "Mariae Himmelfahrt in Saarland"},
-		{"DE-BY", "2029-08-15", "2029-08-16", "Mariae Himmelfahrt in Catholic-majority Bavaria, Munich included"},
+		{"DE-BY", "2029-08-15", "2029-08-15", "only Catholic-majority Bavarian towns: +08-15"},
 		{"DE-TH", "2028-09-20", "2028-09-21", "Weltkindertag in Thuringia"},
 		{"DE-HB", "2028-10-31", "2028-11-01", "Reformationstag in Bremen"},
 		{"DE-BW", "2028-10-31", "2028-10-31", "Baden-Wuerttemberg: school day off only"},
@@ -158,11 +158,11 @@ func TestCalendarExtras(t *testing.T) {
 			t.Errorf("validCalendar(%q) = %v", cal, got)
 		}
 	}
-	augsburg := "DE-BY +08-08"
-	if !isHoliday(augsburg, day(t, "2029-08-08")) || isHoliday("DE-BY", day(t, "2029-08-08")) {
-		t.Error("8 August is a holiday in Augsburg, not in all of Bavaria")
+	munich := "DE-BY +08-15"
+	if !isHoliday(munich, day(t, "2029-08-15")) || isHoliday("DE-BY", day(t, "2029-08-15")) {
+		t.Error("15 August is a holiday in Munich, not in all of Bavaria")
 	}
-	if !isHoliday(augsburg, day(t, "2029-05-10")) || !isHoliday(augsburg, day(t, "2029-08-15")) {
-		t.Error("the state's own holidays still count")
+	if !isHoliday(munich, day(t, "2029-05-10")) {
+		t.Error("the state's own holidays still count (Christi Himmelfahrt)")
 	}
 }
