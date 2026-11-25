@@ -8,3 +8,18 @@ steps:
       - test -z "$(gofmt -l .)"
       - go vet ./...
       - go test ./...
+
+  lint:
+    image: golangci/golangci-lint:v2.15.0
+    commands:
+      - golangci-lint run ./...
+
+  release:
+    image: goreleaser/goreleaser:latest
+    commands:
+      - goreleaser release --clean
+    environment:
+      GITEA_TOKEN:
+        from_secret: gitea_token
+    when:
+      - event: tag
