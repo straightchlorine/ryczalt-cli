@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -34,13 +35,17 @@ func easter(y int) time.Time {
 	return time.Date(y, time.Month(n/31), n%31+1, 0, 0, 0, 0, time.UTC)
 }
 
-// isHoliday reports a public holiday in calendar cal (see validCalendar).
+// isHoliday reports a public holiday in calendar cal. cal comes from a
+// checked config (validCalendar), so anything else is a bug, not a typo
+// to turn into "no holidays".
 func isHoliday(cal string, t time.Time) bool {
+	if !validCalendar(cal) {
+		panic(fmt.Sprintf("isHoliday: unknown calendar %q", cal))
+	}
 	if cal == "PL" {
 		return isHolidayPL(t)
 	}
-	state, ok := strings.CutPrefix(cal, "DE-")
-	return ok && isHolidayDE(state, t)
+	return isHolidayDE(strings.TrimPrefix(cal, "DE-"), t)
 }
 
 // isHolidayPL - holiday days of Poland (from the ustawa o dniach wolnych od pracy)
@@ -90,13 +95,13 @@ func isHolidayDE(state string, t time.Time) bool {
 	case m == time.January && d == 6: // Heilige Drei Könige
 		return in("BW BY ST")
 	case m == time.March && d == 8: // Internationaler Frauentag
-		return in("BE MV")
+		return in("BE") && y >= 2019 || in("MV") && y >= 2023
 	case m == time.August && d == 15: // Mariä Himmelfahrt
 		return in("SL")
 	case m == time.September && d == 20: // Weltkindertag
-		return in("TH")
+		return in("TH") && y >= 2019
 	case m == time.October && d == 31: // Reformationstag
-		return in("BB HB HH MV NI SH SN ST TH")
+		return in("BB MV SN ST TH") || in("HB HH NI SH") && y >= 2018
 	case m == time.November && d == 1: // Allerheiligen
 		return in("BW BY NW RP SL")
 	case m == time.November && d >= 16 && d <= 22 && t.Weekday() == time.Wednesday: // Buß- und Bettag

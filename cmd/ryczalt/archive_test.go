@@ -7,24 +7,34 @@ import (
 	"testing"
 )
 
-func fa(number, issued, p6 string) string {
+const testNIP = "5260250274"
+
+// faFrom is an FA(3) invoice with placeholder data; extra goes inside <Fa>.
+func faFrom(seller, number, issued, p6, extra string) string {
 	period := "<P_6>" + p6 + "</P_6>"
 	if from, to, ok := strings.Cut(p6, ".."); ok {
 		period = "<OkresFa><P_6_Od>" + from + "</P_6_Od><P_6_Do>" + to + "</P_6_Do></OkresFa>"
 	}
 	return `<?xml version="1.0" encoding="UTF-8"?>
-<Faktura xmlns="http://crd.gov.pl/wzor/2025/06/25/13775/"><Fa><KodWaluty>EUR</KodWaluty>
-<P_1>` + issued + `</P_1><P_2>` + number + `</P_2>` + period + `<P_15>3333.00</P_15></Fa></Faktura>`
+<Faktura xmlns="http://crd.gov.pl/wzor/2025/06/25/13775/">
+<Podmiot1><DaneIdentyfikacyjne><NIP>` + seller + `</NIP></DaneIdentyfikacyjne></Podmiot1>
+<Fa><KodWaluty>EUR</KodWaluty><P_1>` + issued + `</P_1><P_2>` + number + `</P_2>` + period +
+		`<P_13_7>3333.00</P_13_7><P_15>3333.00</P_15>` + extra + `<RodzajFaktury>VAT</RodzajFaktury></Fa></Faktura>`
 }
 
-func upo(number, ksefNumber string) string {
-	return `<Potwierdzenie xmlns="http://upo.schematy.mf.gov.pl/KSeF/v4-3"><Dokument>
-<NumerKSeFDokumentu>` + ksefNumber + `</NumerKSeFDokumentu><NumerFaktury>` + number + `</NumerFaktury>
-<TrybWysylki>Offline</TrybWysylki></Dokument></Potwierdzenie>`
+func fa(number, issued, p6 string) string { return faFrom(testNIP, number, issued, p6, "") }
+
+func upo(docs ...[2]string) string {
+	s := `<Potwierdzenie xmlns="http://upo.schematy.mf.gov.pl/KSeF/v4-3">`
+	for _, d := range docs {
+		s += `<Dokument><NumerKSeFDokumentu>` + d[1] + `</NumerKSeFDokumentu><NumerFaktury>` + d[0] +
+			`</NumerFaktury><TrybWysylki>Offline</TrybWysylki></Dokument>`
+	}
+	return s + `</Potwierdzenie>`
 }
 
 func invoify(number, date string) string {
-	return `{"details":{"invoiceNumber":"` + number + `","invoiceDate":"` + date + `","currency":"EUR","totalAmount":3333}}`
+	return `{"details":{"invoiceNumber":"` + number + `","invoiceDate":"` + date + `","currency":"eur","totalAmount":3333}}`
 }
 
 func writeArchive(t *testing.T, files map[string]string) string {
@@ -40,6 +50,15 @@ func writeArchive(t *testing.T, files map[string]string) string {
 		}
 	}
 	return root
+}
+
+func summary(got []invoice) string {
+	var lines []string
+	for _, i := range got {
+		lines = append(lines, strings.Join([]string{i.number, i.issued.Format("2006-01-02"),
+			i.serviceEnd.Format("2006-01-02"), i.currency, i.total.FloatString(2), i.source, i.ksefNumber, i.ksefMode}, " "))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // The layouts the bash tools left in the real archive, with placeholder data.
@@ -59,47 +78,107 @@ func TestReadArchive(t *testing.T) {
 		// bash ksef tool: .ksef/ with the XML twice and the UPO
 		"2026-06/invoice.json":        invoify("INV-06", "2026-06-01T00:00:00.000Z"),
 		"2026-06/.ksef/fa3.xml":       fa("INV-06", "2026-06-01", "2026-05-31"),
-		"2026-06/.ksef/ksef-copy.xml": strings.Replace(fa("INV-06", "2026-06-01", "2026-05-31"), "3333.00", "3333", 1),
-		"2026-06/.ksef/upo.xml":       upo("INV-06", "KSEF-06"),
+		"2026-06/.ksef/ksef-copy.xml": strings.Replace(fa("INV-06", "2026-06-01", "2026-05-31"), "3333.00", "3333", 2),
+		"2026-06/.ksef/meta.json":     `{"invoice_number":"INV-06","ksef_number":"KSEF-06"}`,
+		"2026-06/.ksef/upo.xml":       upo([2]string{"INV-06", ""}), // an empty number keeps meta.json's
 		// ksef-cli: XML and UPO side by side
 		"2026-11/ksef-INV-11.xml":     fa("INV-11", "2026-11-01", "2026-10-31"),
-		"2026-11/ksef-INV-11.upo.xml": upo("INV-11", "KSEF-11"),
+		"2026-11/ksef-INV-11.upo.xml": upo([2]string{"INV-11", "KSEF-11"}),
+		// a purchase invoice pulled from KSeF, and a file that is not XML
+		"2026-11/purchase.xml":    faFrom("1234563218", "THEIRS-1", "2026-11-03", "2026-11-03", ""),
+		"2026-11/a212z261030.xml": `<?xml version="1.0" encoding="ISO-8859-2"?><tabela_kursow typ="A"/>`,
+		"2026-11/notes.xml":       "not xml at all",
 	})
-	got, warns, err := readArchive(root)
+	got, warns, err := readArchive(root, testNIP)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{
+	want := strings.Join([]string{
 		"INV-03 2026-03-01 2026-02-28 EUR 3333.00 2026-03/invoice.json  ",
 		"INV-04 2026-04-02 2026-03-31 EUR 3333.00 2026-05/KSEF-04.xml KSEF-04 ",
 		"INV-05 2026-05-23 2026-04-30 EUR 3333.00 2026-05/KSEF-05.xml  ",
 		"INV-06 2026-06-01 2026-05-31 EUR 3333.00 2026-06/.ksef/fa3.xml KSEF-06 Offline",
 		"INV-11 2026-11-01 2026-10-31 EUR 3333.00 2026-11/ksef-INV-11.xml KSEF-11 Offline",
+	}, "\n")
+	if got := summary(got); got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
-	var lines []string
-	for _, i := range got {
-		lines = append(lines, strings.Join([]string{i.number, i.issued.Format("2006-01-02"), i.serviceEnd.Format("2006-01-02"),
-			i.currency, i.total.FloatString(2), i.source, i.ksefNumber, i.ksefMode}, " "))
-	}
-	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
-		t.Errorf("got\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
-	}
-	wantWarns := []string{
+	wantWarns := strings.Join([]string{
 		"2026-01/invoice.json: no invoice number or date; skipped",
+		"2026-11/notes.xml: not readable XML (EOF); skipped",
+		"2026-11/purchase.xml: invoice THEIRS-1 was issued by NIP 1234563218, not by you; skipped",
 		"INV-04: 2026-04/invoice.json differs from the sent 2026-05/KSEF-04.xml in issue date (2026-04-01 vs 2026-04-02); using the sent XML",
-	}
-	if strings.Join(warns, "\n") != strings.Join(wantWarns, "\n") {
-		t.Errorf("warnings:\n%s", strings.Join(warns, "\n"))
+	}, "\n")
+	if got := strings.Join(warns, "\n"); got != wantWarns {
+		t.Errorf("warnings:\n%s\nwant\n%s", got, wantWarns)
 	}
 }
 
-func TestReadArchiveConflict(t *testing.T) {
+func TestReadArchiveEdges(t *testing.T) {
+	// a UPO for several invoices, same-day invoices in a fixed order, and a
+	// month folder that is a symlink
 	root := writeArchive(t, map[string]string{
-		"2026-06/.ksef/fa3.xml":   fa("INV-06", "2026-06-01", "2026-05-31"),
-		"2026-07/ksef-INV-06.xml": fa("INV-06", "2026-06-02", "2026-05-31"),
+		"2026-06/b.xml":   fa("INV-B", "2026-06-01", "2026-05-31"),
+		"2026-06/a.xml":   fa("INV-A", "2026-06-01", "2026-05-31"),
+		"2026-06/upo.xml": upo([2]string{"INV-A", "K-A"}, [2]string{"INV-B", "K-B"}),
+		"elsewhere/c.xml": fa("INV-C", "2026-07-01", "2026-06-30"),
 	})
-	_, _, err := readArchive(root)
-	if err == nil || !strings.Contains(err.Error(), "are both invoice INV-06 but differ in issue date") {
-		t.Errorf("got %v", err)
+	if err := os.Symlink(filepath.Join(root, "elsewhere"), filepath.Join(root, "2026-07")); err != nil {
+		t.Fatal(err)
+	}
+	got, warns, err := readArchive(root, testNIP)
+	if err != nil || len(warns) > 0 {
+		t.Fatal(err, warns)
+	}
+	want := "INV-A 2026-06-01 2026-05-31 EUR 3333.00 2026-06/a.xml K-A Offline\n" +
+		"INV-B 2026-06-01 2026-05-31 EUR 3333.00 2026-06/b.xml K-B Offline\n" +
+		"INV-C 2026-07-01 2026-06-30 EUR 3333.00 2026-07/c.xml  "
+	if s := summary(got); s != want {
+		t.Errorf("got\n%s\nwant\n%s", s, want)
+	}
+}
+
+func TestReadArchiveErrors(t *testing.T) {
+	cases := map[string]struct {
+		files map[string]string
+		want  string
+	}{
+		"two XMLs differ": {map[string]string{
+			"2026-06/.ksef/fa3.xml":   fa("INV-06", "2026-06-01", "2026-05-31"),
+			"2026-07/ksef-INV-06.xml": fa("INV-06", "2026-06-02", "2026-05-31"),
+		}, "are both invoice INV-06 but differ in issue date"},
+		"two invoice.json differ": {map[string]string{
+			"2026-03/invoice.json": invoify("INV-1", "2026-03-05T00:00:00.000Z"),
+			"2026-04/invoice.json": invoify("INV-1", "2026-04-05T00:00:00.000Z"),
+		}, "are both invoice INV-1 but differ in issue date (2026-03-05 vs 2026-04-05), service end"},
+		"correction": {map[string]string{
+			"2026-06/k.xml": strings.Replace(fa("KOR-1", "2026-06-01", "2026-05-31"), ">VAT<", ">KOR<", 1),
+		}, `invoice KOR-1 is of kind "KOR"`},
+		"VAT charged": {map[string]string{
+			"2026-06/v.xml": faFrom(testNIP, "INV-V", "2026-06-01", "2026-05-31", "<P_14_1>23.00</P_14_1>"),
+		}, "invoice INV-V charges VAT (P_14_1)"},
+		"truncated invoice": {map[string]string{"2026-06/t.xml": "<Faktura><Fa>"}, "2026-06/t.xml: XML syntax error"},
+		"invoice not in UTF-8": {map[string]string{
+			"2026-06/l.xml": `<?xml version="1.0" encoding="ISO-8859-2"?><Faktura><Fa/></Faktura>`,
+		}, "2026-06/l.xml: xml: encoding"},
+		"no currency": {map[string]string{
+			"2026-06/c.xml": strings.Replace(fa("INV-C", "2026-06-01", "2026-05-31"), "EUR", "", 1),
+		}, "without a readable"},
+	}
+	for name, c := range cases {
+		_, _, err := readArchive(writeArchive(t, c.files), testNIP)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want %q", name, err, c.want)
+		}
+	}
+
+	// identical copies, and a zero VAT amount, are fine
+	root := writeArchive(t, map[string]string{
+		"2026-03/invoice.json": invoify("INV-1", "2026-03-05T00:00:00.000Z"),
+		"2026-04/invoice.json": invoify("INV-1", "2026-03-05T00:00:00.000Z"),
+		"2026-06/v.xml":        faFrom(testNIP, "INV-V", "2026-06-01", "2026-05-31", "<P_14_1>0.00</P_14_1>"),
+	})
+	if got, _, err := readArchive(root, testNIP); err != nil || len(got) != 2 {
+		t.Errorf("got %d invoices, %v", len(got), err)
 	}
 }

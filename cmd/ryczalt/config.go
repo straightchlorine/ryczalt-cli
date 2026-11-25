@@ -16,6 +16,7 @@ import (
 // an unknown key is an error, so a typo never passes silently.
 type config struct {
 	archive           string    // folder holding the YYYY-MM invoice folders
+	nip               string    // the seller's NIP; invoices from anyone else are not revenue
 	businessStart     time.Time // first month of business
 	revenueBasis      string    // period_end | service, see ryczalt.conf.example
 	methodConfirmedOn string    // when an accountant confirmed revenueBasis; "" = not yet
@@ -26,27 +27,31 @@ type config struct {
 
 var configKeys = []string{
 	"archive",
-	"tax.form", "tax.payment", "tax.vat_status", "tax.business_start",
+	"tax.nip", "tax.form", "tax.payment", "tax.vat_status", "tax.business_start",
 	"tax.revenue_basis", "tax.method_confirmed_on",
 	"zus.ulga_until", "zus.preferential_until", "zus.chorobowa",
 }
 
-// errUnsupported marks a setup ryczalt does not handle; it exits 3.
+// errUnsupported marks a setup ryczalt does not handle; commands exit 3 on it.
 var errUnsupported = errors.New("unsupported setup")
 
 // parseConfig reads key=value lines with shell-style values under optional
-// [section] headers, and reports every problem at once.
+// [section] headers. A malformed line stops it; problems with values are
+// all reported together.
 func parseConfig(r io.Reader) (config, error) {
 	vals := map[string]string{}
 	section := ""
 	sc := bufio.NewScanner(r)
 	for n := 1; sc.Scan(); n++ {
 		line := strings.TrimSpace(sc.Text())
+		if n == 1 {
+			line = strings.TrimPrefix(line, "\ufeff") // byte order mark some editors add
+		}
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = line[1 : len(line)-1]
+		if head := parseValue(line); strings.HasPrefix(head, "[") && strings.HasSuffix(head, "]") {
+			section = strings.TrimSpace(head[1 : len(head)-1])
 			if !slices.ContainsFunc(
 				configKeys,
 				func(k string) bool { return strings.HasPrefix(k, section+".") },
@@ -113,6 +118,12 @@ func parseConfig(r io.Reader) (config, error) {
 
 	var c config
 	c.archive = expandHome(required("archive"))
+	if c.archive != "" && !filepath.IsAbs(c.archive) {
+		bad("archive", fmt.Sprintf("%q must be an absolute path or start with ~/", c.archive))
+	}
+	if c.nip = required("tax.nip"); c.nip != "" && !validNIP(c.nip) {
+		bad("tax.nip", fmt.Sprintf("%q is not a valid NIP (10 digits, no dashes)", c.nip))
+	}
 	only("tax.form", "ryczalt")
 	only("tax.payment", "monthly")
 	only("tax.vat_status", "exempt")
@@ -171,4 +182,22 @@ func expandHome(path string) string {
 		}
 	}
 	return path
+}
+
+// validNIP checks the 10 digits and the check digit of a Polish tax id
+// (copied from ksef-cli, cmd/ksef/invoice.go).
+func validNIP(nip string) bool {
+	if len(nip) != 10 {
+		return false
+	}
+	sum := 0
+	for i := range 10 {
+		if nip[i] < '0' || nip[i] > '9' {
+			return false
+		}
+		if i < 9 {
+			sum += []int{6, 5, 7, 2, 3, 4, 5, 6, 7}[i] * int(nip[i]-'0')
+		}
+	}
+	return sum%11 == int(nip[9]-'0')
 }

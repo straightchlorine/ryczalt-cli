@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -40,8 +42,8 @@ func TestValidCalendar(t *testing.T) {
 	}
 }
 
-// Checked against date.nager.at (PL) and feiertage-api.de (DE states) for
-// every day of 2025-2030 when written; these cases pin each rule.
+// One case per rule, readable on its own; TestHolidaysGolden checks
+// every day against the reference lists.
 func TestShiftDeadline(t *testing.T) {
 	cases := []struct{ cal, in, want, why string }{
 		{"PL", "2026-11-20", "2026-11-20", "Friday, a working day"},
@@ -51,6 +53,7 @@ func TestShiftDeadline(t *testing.T) {
 		{"PL", "2026-06-04", "2026-06-05", "Boze Cialo"},
 		{"PL", "2026-12-24", "2026-12-28", "Wigilia, Boze Narodzenie, weekend"},
 		{"PL", "2024-12-24", "2024-12-24", "Wigilia before 2025 is a working day"},
+		{"PL", "2025-12-24", "2025-12-29", "Wigilia from 2025, Boze Narodzenie, weekend"},
 		{"PL", "2027-01-06", "2027-01-07", "Trzech Kroli"},
 		{"PL", "2027-02-20", "2027-02-22", "Saturday"},
 		{"PL", "2027-03-29", "2027-03-30", "Poniedzialek Wielkanocny"},
@@ -91,4 +94,59 @@ func TestBrandenburgSundays(t *testing.T) {
 			t.Errorf("%s: want a holiday in Brandenburg only", s)
 		}
 	}
+}
+
+// Every day of every year in testdata/holidays.txt, for every calendar.
+func TestHolidaysGolden(t *testing.T) {
+	b, err := os.ReadFile("testdata/holidays.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		f := strings.Fields(line)
+		cal, year := f[0], f[1]
+		seen[cal] = true
+		want := map[string]bool{}
+		for _, d := range f[2:] {
+			want[year+"-"+d] = true
+		}
+		for d := day(t, year+"-01-01"); d.Format("2006") == year; d = d.AddDate(0, 0, 1) {
+			if k := d.Format(time.DateOnly); isHoliday(cal, d) != want[k] {
+				t.Errorf("%s %s: isHoliday = %v, reference says %v", cal, k, !want[k], want[k])
+			}
+		}
+	}
+	if len(seen) != 1+len(deStates) {
+		t.Errorf("golden file covers %d calendars, want %d", len(seen), 1+len(deStates))
+	}
+}
+
+func TestStateHolidaysByYear(t *testing.T) {
+	cases := []struct {
+		cal, date string
+		want      bool
+	}{
+		{"DE-MV", "2022-03-08", false}, {"DE-MV", "2023-03-08", true},
+		{"DE-BE", "2018-03-08", false}, {"DE-BE", "2019-03-08", true},
+		{"DE-TH", "2018-09-20", false}, {"DE-TH", "2019-09-20", true},
+		{"DE-NI", "2016-10-31", false}, {"DE-NI", "2018-10-31", true}, {"DE-SN", "2016-10-31", true},
+	}
+	for _, c := range cases {
+		if got := isHoliday(c.cal, day(t, c.date)); got != c.want {
+			t.Errorf("%s %s: got %v", c.cal, c.date, got)
+		}
+	}
+}
+
+func TestUnknownCalendarPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("want a panic for calendar pl")
+		}
+	}()
+	isHoliday("pl", day(t, "2026-12-25"))
 }

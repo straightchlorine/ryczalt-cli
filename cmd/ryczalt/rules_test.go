@@ -2,6 +2,7 @@ package main
 
 import (
 	"math/big"
+	"os"
 	"testing"
 	"time"
 )
@@ -50,23 +51,46 @@ func TestRuleTable(t *testing.T) {
 			}
 		}
 	}
-	// A reminder that fails once the yearly figures are due: every key of
-	// the current year must be official after January.
-	now := time.Now()
-	if now.Month() == time.January {
-		return
+}
+
+func TestStaleRules(t *testing.T) {
+	if got := staleRules(time.Date(2026, 6, 1, 12, 0, 0, 0, warsaw)); got != nil {
+		t.Errorf("2026: %v", got)
 	}
-	for _, k := range ruleKeys {
-		if _, st := lookup(now.Year(), k[0]); st != official {
-			t.Errorf("rules %d %s is %s: enter the official figure (see the comment on rules)", now.Year(), k[0], st)
-		}
+	if got := staleRules(time.Date(2027, 1, 31, 12, 0, 0, 0, warsaw)); got != nil {
+		t.Errorf("January is a grace month: %v", got)
+	}
+	if got := staleRules(time.Date(2027, 2, 1, 12, 0, 0, 0, warsaw)); len(got) != 2 {
+		t.Errorf("February 2027 with a forecast and a missing figure: %v", got)
+	}
+}
+
+// The yearly reminder runs only on request (RYCZALT_CHECK_FRESH=1), e.g.
+// from a cron job, so it never blocks an unrelated release.
+func TestRulesFresh(t *testing.T) {
+	if os.Getenv("RYCZALT_CHECK_FRESH") == "" {
+		t.Skip("set RYCZALT_CHECK_FRESH=1 to check this year's figures are in")
+	}
+	for _, s := range staleRules(time.Now().In(warsaw)) {
+		t.Errorf("rules %s: enter the official figure (see the comment on rules)", s)
 	}
 }
 
 func TestPLNText(t *testing.T) {
-	for g, want := range map[int64]string{0: "0.00", 5: "0.05", 99999: "999.99", 100000: "1 000.00", 123456789: "1 234 567.89"} {
+	for g, want := range map[int64]string{0: "0.00", 5: "0.05", 99999: "999.99", 100000: "1 000.00",
+		123456789: "1 234 567.89", -5: "-0.05", -123456789: "-1 234 567.89"} {
 		if got := plnText(amount{g, official}); got != want {
 			t.Errorf("plnText(%d) = %q, want %q", g, got, want)
+		}
+	}
+}
+
+func TestGrosze(t *testing.T) {
+	for in, want := range map[string]int64{"10.005": 1001, "10.004": 1000, "-10.005": -1001, "-10.004": -1000,
+		"-0.005": -1, "-2.50": -250, "0": 0} {
+		r, _ := new(big.Rat).SetString(in)
+		if got := grosze(r); got != want {
+			t.Errorf("grosze(%s) = %d, want %d", in, got, want)
 		}
 	}
 }

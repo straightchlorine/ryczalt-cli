@@ -9,7 +9,8 @@ import (
 )
 
 const validConfig = `archive=/srv/invoices
-[tax]
+[tax]   # podatek
+nip=5260250274
 form=ryczalt
 payment=monthly
 vat_status=exempt
@@ -29,6 +30,7 @@ func TestParseConfig(t *testing.T) {
 	}
 	want := config{
 		archive:           "/srv/invoices",
+		nip:               "5260250274",
 		businessStart:     time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
 		revenueBasis:      "period_end",
 		methodConfirmedOn: "2026-11-20",
@@ -46,7 +48,7 @@ func TestParseConfigErrors(t *testing.T) {
 		name, old, new, want string
 		unsupported          bool
 	}{
-		{"unknown key", "chorobowa=yes", "chorobowa=yes\nchorobwa=no", "line 13: unknown key zus.chorobwa", false},
+		{"unknown key", "chorobowa=yes", "chorobowa=yes\nchorobwa=no", "line 14: unknown key zus.chorobwa", false},
 		{"key in wrong section", "chorobowa=yes", "chorobowa=yes\narchive=/srv", "unknown key zus.archive", false},
 		{"unknown section", "[zus]", "[vat]", "unknown section [vat]", false},
 		{"set twice", "payment=monthly", "payment=monthly\npayment=monthly", "tax.payment is set twice", false},
@@ -57,6 +59,9 @@ func TestParseConfigErrors(t *testing.T) {
 		{"bad date", `"2026-11-20"`, "20.11.2026", "is not a date like 2026-01-31", false},
 		{"phases out of order", "preferential_until=2027-12", "preferential_until=2025-11", "must come after zus.ulga_until", false},
 		{"phase before start", "ulga_until=2025-12", "ulga_until=2025-01", "zus.ulga_until: before tax.business_start", false},
+		{"relative archive", "archive=/srv/invoices", "archive=invoices", `archive: "invoices" must be an absolute path`, false},
+		{"bad NIP", "nip=5260250274", "nip=526-025-02-74", "tax.nip: \"526-025-02-74\" is not a valid NIP", false},
+		{"bad NIP check digit", "nip=5260250274", "nip=5260250275", "is not a valid NIP", false},
 		{"other tax form", "form=ryczalt", "form=liniowy", "tax.form=liniowy, only ryczalt is supported", true},
 		{"active VAT", "vat_status=exempt", "vat_status=active", "only exempt is supported", true},
 	}
@@ -88,5 +93,11 @@ func TestConfigExample(t *testing.T) {
 	filled := strings.Replace(string(b), "revenue_basis=", "revenue_basis=service", 1)
 	if _, err := parseConfig(strings.NewReader(filled)); err != nil {
 		t.Errorf("example with revenue_basis filled: %v", err)
+	}
+}
+
+func TestConfigByteOrderMark(t *testing.T) {
+	if _, err := parseConfig(strings.NewReader("\ufeff" + validConfig)); err != nil {
+		t.Error(err)
 	}
 }

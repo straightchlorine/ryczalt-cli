@@ -32,6 +32,6 @@ func paint(w *os.File, colour, s string) string {
 
 // tag is a status tag of fixed width: [  OK  ], [ WARN ], [ FAIL ], [ INFO ].
 func tag(w *os.File, colour, word string) string {
-	pad := 6 - len(word)
+	pad := max(0, 6-len(word))
 	return paint(w, colour, "["+strings.Repeat(" ", pad/2)+word+strings.Repeat(" ", pad-pad/2)+"]")
 }

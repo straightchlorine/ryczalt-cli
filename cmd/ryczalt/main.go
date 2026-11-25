@@ -31,7 +31,7 @@ func main() {
 	switch cmd := os.Args[1]; cmd {
 	case "rules":
 		err = cmdRules(os.Args[2:])
-	case "version":
+	case "version", "--version", "-v":
 		fmt.Println(version)
 	default:
 		fmt.Fprintf(os.Stderr, "%s unknown subcommand %q - run ryczalt -h for the list\n",

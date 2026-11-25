@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -57,9 +58,24 @@ var ruleKeys = [][2]string{
 	{"health_wage", "average wage, Q4 of the year before"},
 }
 
+// staleRules lists the figures of now's year that should be official by
+// now: GUS and ZUS publish them by the end of January.
+func staleRules(now time.Time) []string {
+	if now.Month() == time.January {
+		return nil
+	}
+	var out []string
+	for _, k := range ruleKeys {
+		if _, st := lookup(now.Year(), k[0]); st != official {
+			out = append(out, fmt.Sprintf("%d %s is %s", now.Year(), k[0], st))
+		}
+	}
+	return out
+}
+
 // Social contribution rates (ustawa o systemie ubezpieczeń społecznych,
-// art. 22).
-// have not changed for years; move them into rules if one does.
+// art. 22). They have not changed for years; move them into rules if
+// one does.
 var (
 	rateEmerytalna = big.NewRat(1952, 10000)
 	rateRentowa    = big.NewRat(800, 10000)
@@ -87,11 +103,16 @@ func lookup(year int, key string) (*big.Rat, status) {
 	return v, r.status
 }
 
-// grosze rounds a non-negative PLN amount to grosze, half up.
+// grosze rounds a PLN amount to grosze, halves away from zero, so a
+// correction rounds the same way as the invoice it corrects.
 func grosze(pln *big.Rat) int64 {
-	g := new(big.Rat).Mul(pln, big.NewRat(100, 1))
+	g := new(big.Rat).Mul(new(big.Rat).Abs(pln), big.NewRat(100, 1))
 	g.Add(g, big.NewRat(1, 2))
-	return new(big.Int).Quo(g.Num(), g.Denom()).Int64()
+	n := new(big.Int).Quo(g.Num(), g.Denom()).Int64()
+	if pln.Sign() < 0 {
+		return -n
+	}
+	return n
 }
 
 func ratOf(g int64) *big.Rat { return big.NewRat(g, 100) }
@@ -151,25 +172,33 @@ func plnText(a amount) string {
 	if a.status == unknown {
 		return "n/a"
 	}
-	s := fmt.Sprintf("%d.%02d", a.grosze/100, a.grosze%100)
+	g, sign := a.grosze, ""
+	if g < 0 {
+		g, sign = -g, "-"
+	}
+	s := fmt.Sprintf("%d.%02d", g/100, g%100)
 	for i := strings.IndexByte(s, '.') - 3; i > 0; i -= 3 {
 		s = s[:i] + " " + s[i:]
 	}
 	if a.status == forecast {
-		s = "~" + s
+		sign = "~" + sign
 	}
-	return s
+	return sign + s
 }
 
+var yearArg = regexp.MustCompile(`^20\d\d$`)
+
 func cmdRules(args []string) error {
-	year := time.Now().Year()
+	year := time.Now().In(warsaw).Year()
 	switch {
+	case len(args) == 1 && (args[0] == "-h" || args[0] == "--help"):
+		fmt.Print(usage)
+		return nil
 	case len(args) == 1:
-		y, err := strconv.Atoi(args[0])
-		if err != nil || len(args[0]) != 4 {
+		if !yearArg.MatchString(args[0]) {
 			return fmt.Errorf("rules takes a year like 2026, got %q", args[0])
 		}
-		year = y
+		year, _ = strconv.Atoi(args[0])
 	case len(args) > 1:
 		return errors.New("usage: ryczalt rules [YEAR]")
 	}
@@ -212,10 +241,16 @@ func printRules(w *os.File, year int) {
 	row("health, above 300 000", healthMonthly(year, 2), "")
 	pref, _ := socialMonthly(year, true, true)
 	prefNo, _ := socialMonthly(year, true, false)
-	row("social, preferential", pref, plnText(prefNo)+" without chorobowa")
+	without := func(a amount) string {
+		if a.status == unknown {
+			return ""
+		}
+		return plnText(a) + " without chorobowa"
+	}
+	row("social, preferential", pref, without(prefNo))
 	full, fpfs := socialMonthly(year, false, true)
 	fullNo, _ := socialMonthly(year, false, false)
-	row("social, full", full, plnText(fullNo)+" without chorobowa")
+	row("social, full", full, without(fullNo))
 	row("FP/FS, full phase only", fpfs, "")
 
 	for _, u := range unknowns {

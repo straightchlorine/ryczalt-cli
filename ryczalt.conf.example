@@ -4,7 +4,11 @@
 # Folder holding one YYYY-MM folder per month of invoices.
 archive=~/invoices
 
-[tax]
+[tax]   # podatek
+# Your NIP. Invoices in the archive issued by anyone else (e.g. purchase
+# invoices pulled from KSeF) are not revenue and are skipped.
+nip=1234563218
+
 # The setup this tool handles. Anything else is refused.
 form=ryczalt
 payment=monthly
