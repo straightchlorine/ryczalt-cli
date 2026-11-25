@@ -58,7 +58,7 @@ const maxFileSize = 10 << 20
 // Only invoices whose seller is nip count; others (e.g. purchase invoices
 // pulled from KSeF) are skipped with a warning. Anything that would make
 // the revenue wrong without notice is either an error or a warning.
-func readArchive(root, nip string) ([]invoice, []string, error) {
+func readArchive(root, nip string) ([]invoice, []finding, error) {
 	dirs, err := os.ReadDir(root)
 	if err != nil {
 		return nil, nil, err
@@ -73,8 +73,14 @@ func readArchive(root, nip string) ([]invoice, []string, error) {
 		k.mode = cmp.Or(mode, k.mode)
 		ksefOf[number] = k
 	}
-	var warns []string
-	warn := func(format string, a ...any) { warns = append(warns, fmt.Sprintf(format, a...)) }
+	var found []finding
+	// warn: may change the numbers, shown by status; note: only by check
+	warn := func(format string, a ...any) {
+		found = append(found, finding{levelWarn, "archive", fmt.Sprintf(format, a...)})
+	}
+	note := func(level, group, format string, a ...any) {
+		found = append(found, finding{level, group, fmt.Sprintf(format, a...)})
+	}
 
 	for _, d := range dirs {
 		if !folderName.MatchString(d.Name()) {
@@ -104,7 +110,7 @@ func readArchive(root, nip string) ([]invoice, []string, error) {
 				warn("%s: %v; skipped", rel, err)
 				return nil
 			} else if info.Size() > maxFileSize {
-				warn("%s: larger than %d MB, not an invoice; skipped", rel, maxFileSize>>20)
+				note(levelInfo, "archive", "%s: larger than %d MB, not an invoice; skipped", rel, maxFileSize>>20)
 				return nil
 			}
 			b, err := os.ReadFile(path)
@@ -131,10 +137,13 @@ func readArchive(root, nip string) ([]invoice, []string, error) {
 				draft[inv.number] = inv
 
 			case name == "meta.json" && filepath.Base(filepath.Dir(r)) == ".ksef":
-				var m struct{ Invoice_number, Ksef_number string }
+				var m struct{ Invoice_number, Ksef_number, Aes_key_hex string }
 				if err := json.Unmarshal(b, &m); err != nil {
 					warn("%s: %v; skipped", rel, err)
 					return nil
+				}
+				if m.Aes_key_hex != "" {
+					note(levelCheck, "security", "%s: KSeF session key in clear text; delete aes_key_hex and aes_iv_hex", rel)
 				}
 				if k := ksefOf[strings.TrimSpace(m.Invoice_number)]; k.number == "" {
 					setKSeF(strings.TrimSpace(m.Invoice_number), strings.TrimSpace(m.Ksef_number), "")
@@ -153,7 +162,7 @@ func readArchive(root, nip string) ([]invoice, []string, error) {
 						return fmt.Errorf("%s: %w", rel, err)
 					}
 					if seller != nip {
-						warn("%s: invoice %s was issued by NIP %s, not by you; skipped", rel, inv.number, seller)
+						note(levelInfo, "archive", "%s: invoice %s was issued by NIP %s, not by you; skipped", rel, inv.number, seller)
 						return nil
 					}
 					inv.folder, inv.source = folder, rel
@@ -194,8 +203,15 @@ func readArchive(root, nip string) ([]invoice, []string, error) {
 	var out []invoice
 	for n, inv := range draft {
 		if s, ok := sent[n]; ok {
-			if diff := differ(inv, s); diff != "" {
+			// the XML is what was issued; a draft dated a day or two
+			// earlier is normal, so only differences in what is taxed count
+			draftAsSent := inv
+			draftAsSent.issued = s.issued
+			if diff := differ(draftAsSent, s); diff != "" {
 				warn("%s: %s differs from the XML sent to KSeF (in %s) in %s; using the XML", n, inv.source, s.folder, diff)
+			} else if !inv.issued.Equal(s.issued) {
+				note(levelInfo, "drafts", "%s: %s is dated %s, the XML sent to KSeF %s", n, inv.source,
+					inv.issued.Format(time.DateOnly), s.issued.Format(time.DateOnly))
 			}
 			continue
 		}
@@ -211,8 +227,8 @@ func readArchive(root, nip string) ([]invoice, []string, error) {
 	slices.SortFunc(out, func(a, b invoice) int {
 		return cmp.Or(a.issued.Compare(b.issued), strings.Compare(a.number, b.number))
 	})
-	slices.Sort(warns)
-	return out, warns, nil
+	slices.SortStableFunc(found, func(a, b finding) int { return strings.Compare(a.text, b.text) })
+	return out, found, nil
 }
 
 // differ names the fields in which two records of one invoice disagree.
@@ -339,4 +355,71 @@ func readInvoify(b []byte) (invoice, error) {
 		currency:   currency,
 		total:      total,
 	}, nil
+}
+
+// A finding is something about the archive worth telling: levelWarn may
+// change the numbers and status shows it; levelCheck and levelInfo only
+// ryczalt check shows, as a warning or a note.
+type finding struct {
+	level, group, text string
+}
+
+const (
+	levelWarn  = "warn"
+	levelCheck = "check"
+	levelInfo  = "info"
+)
+
+// checkInvoices finds what a tax office would ask about: invoices from the
+// KSeF start with no KSeF number, sent late, or issued after the deadline.
+func checkInvoices(invs []invoice) []finding {
+	var out []finding
+	ksefStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC) // KSeF mandatory for everyone
+	for _, inv := range invs {
+		if inv.issued.Before(ksefStart) {
+			continue
+		}
+		switch {
+		case inv.ksefNumber == "":
+			out = append(out, finding{levelCheck, "KSeF", inv.number + ": no KSeF number in the archive (UPO or .ksef/meta.json)"})
+		case inv.ksefMode == "":
+			out = append(out, finding{levelInfo, "KSeF", inv.number + ": no UPO kept, the KSeF number comes from .ksef/meta.json"})
+		case inv.ksefMode == "Offline":
+			out = append(out, finding{levelInfo, "KSeF", inv.number + ": KSeF recorded it as Offline, sent after its issue date"})
+		}
+		end := inv.serviceEnd
+		by := shiftDeadline("PL", time.Date(end.Year(), end.Month()+1, 15, 0, 0, 0, 0, time.UTC))
+		if inv.issued.After(by) {
+			out = append(out, finding{levelCheck, "invoicing", fmt.Sprintf("%s: issued %s, after the deadline %s (art. 106i ust. 1 ustawy o VAT)",
+				inv.number, inv.issued.Format(time.DateOnly), by.Format(time.DateOnly))})
+		}
+	}
+	return out
+}
+
+// printFindings writes one tag per group with its items below.
+func printFindings(w *os.File, fs []finding, levels ...string) (warned bool) {
+	var groups []string
+	byGroup := map[string][]finding{}
+	for _, f := range fs {
+		if !slices.Contains(levels, f.level) {
+			continue
+		}
+		if _, ok := byGroup[f.group]; !ok {
+			groups = append(groups, f.group)
+		}
+		byGroup[f.group] = append(byGroup[f.group], f)
+	}
+	for _, g := range groups {
+		warn := slices.ContainsFunc(byGroup[g], func(f finding) bool { return f.level != levelInfo })
+		t := tag(w, cyan, "INFO")
+		if warn {
+			t, warned = tag(w, yellow, "WARN"), true
+		}
+		fmt.Fprintln(w, t, g)
+		for _, f := range byGroup[g] {
+			fmt.Fprintln(w, "        ", f.text)
+		}
+	}
+	return warned
 }

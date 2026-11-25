@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,7 +27,7 @@ func fakeNBPFlat(t *testing.T) {
 }
 
 // Five months invoiced at 3333 EUR (13 332.00 PLN each), June not invoiced
-// by 15 July, July in progress. Worked out by hand:
+// by 15 July, July in progress; payments as below. Worked out by hand:
 //   - ryczalt from 1 January: 1600 (1599.84), 3200, 4800, 6399, 7999 in total
 //   - health: revenue less social passes 60 000 in May (66 660 - 5 x 456.18)
 //   - 20 June 2026 is a Saturday, so May is due on Monday 22 June
@@ -43,11 +44,28 @@ func TestStatus(t *testing.T) {
 		businessStart: day(t, "2026-01-01"), preferentialUntil: day(t, "2027-12-01"), chorobowa: true,
 	}
 	today := day(t, "2026-07-20")
-	invs, warns, err := readArchive(c.archive, c.nip)
-	if err != nil || len(warns) > 0 {
-		t.Fatal(err, warns)
+	invs, found, err := readArchive(c.archive, c.nip)
+	if err != nil || len(found) > 0 {
+		t.Fatal(err, found)
 	}
-	months, notes := buildYear(c, invs, 2026, today, t.TempDir())
+	// January to April paid on their deadlines, May's ryczalt late, June's
+	// ZUS early (June has no invoice yet), nothing for July
+	var pays []payment
+	pay := func(on, period, kind string, g int64) {
+		pays = append(pays, payment{id: on + kind, paidOn: day(t, on), period: day(t, period+"-01"), kind: kind, grosze: g})
+	}
+	for i, due := range []string{"2026-02-20", "2026-03-20", "2026-04-20", "2026-05-20"} {
+		period := fmt.Sprintf("2026-%02d", i+1)
+		pay(due, period, "social", 45618)
+		pay(due, period, "health", 49835)
+		pay(due, period, "ryczalt", 160000)
+	}
+	pay("2026-06-22", "2026-05", "social", 45618)
+	pay("2026-06-22", "2026-05", "health", 83058)
+	pay("2026-06-25", "2026-05", "ryczalt", 160000)
+	pay("2026-07-10", "2026-06", "social", 45618)
+	pay("2026-07-10", "2026-06", "health", 83058)
+	months, notes := buildYear(c, invs, pays, 2026, today, t.TempDir())
 	if len(notes) > 0 {
 		t.Fatal(notes)
 	}
@@ -62,19 +80,19 @@ func TestStatus(t *testing.T) {
 Mon 2026-07-20 | 12% ryczalt | preferential ZUS with chorobowa | rules official
 
 Month    Invoice  Revenue PLN  Ryczalt*  Social  Health  Due             State
-2026-01  INV-02     13 332.00     1 600  456.18  498.35  Fri 2026-02-20  past due date
-2026-02  INV-03     13 332.00     1 600  456.18  498.35  Fri 2026-03-20  past due date
-2026-03  INV-04     13 332.00     1 600  456.18  498.35  Mon 2026-04-20  past due date
-2026-04  INV-05     13 332.00     1 599  456.18  498.35  Wed 2026-05-20  past due date
-2026-05  INV-06     13 332.00     1 600  456.18  830.58  Mon 2026-06-22  past due date
+2026-01  INV-02     13 332.00     1 600  456.18  498.35  Fri 2026-02-20  [  OK  ]
+2026-02  INV-03     13 332.00     1 600  456.18  498.35  Fri 2026-03-20  [  OK  ]
+2026-03  INV-04     13 332.00     1 600  456.18  498.35  Mon 2026-04-20  [  OK  ]
+2026-04  INV-05     13 332.00     1 599  456.18  498.35  Wed 2026-05-20  [  OK  ]
+2026-05  INV-06     13 332.00     1 600  456.18  830.58  Mon 2026-06-22  [ WARN ] late, 2026-06-25
 2026-06  -                  -       n/a  456.18  830.58  Mon 2026-07-20  [ FAIL ] no invoice; due by 2026-07-15
 2026-07  -                  -       n/a  456.18  830.58  Thu 2026-08-20  in progress
 
-* before deducting paid ZUS (social, and half of health); the payment log will lower it
+* in full, before deducting paid ZUS (social, half of health); PIT-28 settles the deductions
 
 Year so far   66 660.00 PLN revenue, health bracket 60k-300k
 
-Next payment  Mon 2026-07-20, for 2026-06
+Next payment  Thu 2026-08-20, for 2026-07
   zus         1 286.76 PLN (social 456.18, health 830.58)
   ryczalt     not yet invoiced
   total       1 286.76 PLN
@@ -94,7 +112,7 @@ func TestMonthState(t *testing.T) {
 		{"2026-11-01", "due in 19 days", ""},
 		{"2026-11-13", "due in 7 days", "WARN"},
 		{"2026-11-20", "due today", "WARN"},
-		{"2026-11-21", "past due date", ""},
+		{"2026-11-21", "zus, ryczalt", "FAIL"},
 	}
 	for _, c := range cases {
 		if text, level := monthState(m, day(t, c.today)); text != c.text || level != c.level {
