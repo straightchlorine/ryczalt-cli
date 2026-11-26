@@ -3,7 +3,7 @@ when:
 
 steps:
   check:
-    image: golang:1.26
+    image: golang:1.27
     commands:
       - apt-get update -qq && apt-get install -y -qq libxml2-utils >/dev/null # xmllint: JPK_EWP against the MF schema
       - test -z "$(gofmt -l .)"

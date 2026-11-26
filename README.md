@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[English](README.en.md) &middot; [Codeberg](https://codeberg.org/piotrkrzysztof/ryczalt-cli) &middot; [GitHub](https://github.com/straightchlorine/ryczalt-cli)
+[Dokumentacja](https://ryczalt.piotrkrzysztof.dev) &middot; [Documentation (EN)](https://ryczalt.piotrkrzysztof.dev/en/) &middot; [English](README.en.md) &middot; [Codeberg](https://codeberg.org/piotrkrzysztof/ryczalt-cli) &middot; [GitHub](https://github.com/straightchlorine/ryczalt-cli)
 
 Ryczałt, ZUS i terminy płatności dla jednoosobowej działalności, z wiersza poleceń.
 
@@ -36,7 +36,8 @@ podaje kwoty do PIT-28 i rocznego rozliczenia składki zdrowotnej.
 - Prowadzi ewidencję przychodów: tabela, CSV lub plik JPK_EWP(4) sprawdzony
   oficjalnym schematem MF
 - Sprawdza archiwum (`ryczalt check`): brakujące numery KSeF, faktury
-  wystawione po terminie, kontrahent bez numeru VAT
+  wystawione po terminie, kontrahent z UE zidentyfikowany inaczej niż numerem
+  VAT
 
 ## Jak zacząć?
 

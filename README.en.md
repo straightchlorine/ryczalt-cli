@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[Polski](README.md) &middot; [Codeberg](https://codeberg.org/piotrkrzysztof/ryczalt-cli) &middot; [GitHub](https://github.com/straightchlorine/ryczalt-cli)
+[Documentation](https://ryczalt.piotrkrzysztof.dev/en/) &middot; [Dokumentacja (PL)](https://ryczalt.piotrkrzysztof.dev) &middot; [Polski](README.md) &middot; [Codeberg](https://codeberg.org/piotrkrzysztof/ryczalt-cli) &middot; [GitHub](https://github.com/straightchlorine/ryczalt-cli)
 
 Ryczałt, ZUS and payment deadlines for Polish sole traders, from the command line.
 
@@ -36,7 +36,7 @@ year gives the figures for PIT-28 and the annual health contribution settlement.
 - Keeps the revenue register: a table, CSV, or a JPK_EWP(4) file checked
   against the official MF schema
 - Checks the archive (`ryczalt check`): missing KSeF numbers, invoices issued
-  late, buyers without a VAT number
+  late, EU buyers identified by something other than a VAT number
 
 ## Getting started
 
