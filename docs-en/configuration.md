@@ -28,7 +28,7 @@ a setting the program does not handle (see below).
 
 - A comment starts with `#` at the beginning of a line, or with ` #` after a
   value.
-- A value is read as the shell would read it: the quotes `"…"` and `'…'` are
+- A value is read as the shell would read it: the quotes `"..."` and `'...'` are
   optional, and inside quotes you can use spaces and the `#` character.
 - `~/` at the start of a path means the home directory.
 - Empty lines are skipped.

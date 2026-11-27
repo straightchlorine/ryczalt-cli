@@ -1,6 +1,6 @@
 ---
 title: "Year-end figures: PIT-28, DRA and the register"
-description: "What ryczalt gives at year-end: the figures for PIT-28(28) and block XII of the ZUS DRA, the revenue register as CSV or JPK_EWP(4), the health settlement."
+description: "What ryczalt gives at year-end: PIT-28(28) and block XII of the ZUS DRA field by field, the revenue register as CSV or JPK_EWP(4), the annual health settlement."
 ---
 
 # Year-end
