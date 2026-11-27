@@ -21,15 +21,18 @@ func validCalendar(cal string) bool {
 	if len(f) == 0 {
 		return false
 	}
+
 	state, ok := strings.CutPrefix(f[0], "DE-")
 	if f[0] != "PL" && (!ok || !slices.Contains(deStates, state)) {
 		return false
 	}
+
 	for _, extra := range f[1:] {
 		if _, err := time.Parse("+01-02", extra); err != nil {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -40,11 +43,13 @@ func easter(y int) time.Time {
 	d, e := b/4, b%4
 	f := (b + 8) / 25
 	g := (b - f + 1) / 3
+
 	h := (19*a + b - d - g + 15) % 30
 	i, k := c/4, c%4
 	l := (32 + 2*e + 2*i - h - k) % 7
 	m := (a + 11*h + 22*l) / 451
 	n := h + l - 7*m + 114
+
 	return time.Date(y, time.Month(n/31), n%31+1, 0, 0, 0, 0, time.UTC)
 }
 
@@ -55,6 +60,7 @@ func isHoliday(cal string, t time.Time) bool {
 	if !validCalendar(cal) {
 		panic(fmt.Sprintf("isHoliday: unknown calendar %q", cal))
 	}
+
 	f := strings.Fields(cal)
 	if slices.Contains(f[1:], t.Format("+01-02")) {
 		return true
@@ -62,6 +68,7 @@ func isHoliday(cal string, t time.Time) bool {
 	if f[0] == "PL" {
 		return isHolidayPL(t)
 	}
+
 	return isHolidayDE(strings.TrimPrefix(f[0], "DE-"), t)
 }
 
@@ -86,6 +93,7 @@ func isHolidayPL(t time.Time) bool {
 		m == time.December && d == 26: // drugi dzień Bożego Narodzenia
 		return true
 	}
+
 	return false
 }
 
@@ -126,6 +134,7 @@ func isHolidayDE(state string, t time.Time) bool {
 	case m == time.November && d >= 16 && d <= 22 && t.Weekday() == time.Wednesday: // Buß- und Bettag
 		return in("SN")
 	}
+
 	return false
 }
 

@@ -46,6 +46,7 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 	if !currencyCode.MatchString(currency) {
 		return nbpRate{}, fmt.Errorf("currency %q is not a three-letter code", currency)
 	}
+
 	before := revenue.AddDate(0, 0, -1)
 	// the table that applies is the one of the last working day up to
 	// before; NBP publishes it around noon that day
@@ -53,6 +54,7 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 	for !isWorkingDay("PL", table) {
 		table = table.AddDate(0, 0, -1)
 	}
+
 	now := clock().In(warsaw)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	notYet := fmt.Errorf("the %s rate for revenue on %s comes from NBP's table of %s %s, "+
@@ -61,11 +63,13 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 	if table.After(today) || table.Equal(today) && now.Hour() < 12 {
 		return nbpRate{}, notYet
 	}
+
 	cache := filepath.Join(
 		cacheDir,
 		"nbp",
 		strings.ToLower(currency)+"-"+before.Format(time.DateOnly)+".json",
 	)
+
 	var r nbpRate
 	b, err := os.ReadFile(cache)
 	if err == nil && json.Unmarshal(b, &r) == nil && r.valid(before) {
@@ -78,28 +82,34 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 	// a range, so a weekend or holiday resolves to the table before it
 	u := fmt.Sprintf("%s/%s/%s/%s/?format=json", nbpURL, strings.ToLower(currency),
 		before.AddDate(0, 0, -10).Format(time.DateOnly), before.Format(time.DateOnly))
+
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return nbpRate{}, err
 	}
 	req.Header.Set("User-Agent", "ryczalt/"+version)
+
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		return nbpRate{}, fmt.Errorf("NBP rate lookup: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }() // read only; nothing to lose
+
 	if resp.StatusCode != http.StatusOK {
 		return nbpRate{}, fmt.Errorf("NBP rate lookup: %s for %s", resp.Status, u)
 	}
+
 	var body struct {
 		Rates []struct {
 			No, EffectiveDate string
 			Mid               json.Number
 		}
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nbpRate{}, fmt.Errorf("NBP rate lookup: %w", err)
 	}
+
 	if len(body.Rates) == 0 {
 		return nbpRate{}, fmt.Errorf(
 			"NBP has no %s rate in the ten days before %s",
@@ -107,11 +117,13 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 			revenue.Format(time.DateOnly),
 		)
 	}
+
 	last := body.Rates[len(body.Rates)-1]
 	r = nbpRate{Mid: last.Mid.String(), Table: last.No, Date: last.EffectiveDate}
 	if !r.valid(before) {
 		return nbpRate{}, fmt.Errorf("NBP sent an unusable rate: %+v", r)
 	}
+
 	// an older table while the right one is days old at most means it is
 	// not out yet (or NBP is late): never cache that. An older table for a
 	// day long past is right: NBP did not publish on that day.
@@ -123,6 +135,7 @@ func pitRate(currency string, revenue time.Time, cacheDir string) (nbpRate, erro
 	if err := os.MkdirAll(filepath.Dir(cache), 0o700); err == nil {
 		_ = os.WriteFile(cache, b, 0o600) // a failed write only costs a lookup next time
 	}
+
 	return r, nil
 }
 
@@ -139,10 +152,12 @@ func revenuePLN(inv invoice, basis, cacheDir string) (int64, nbpRate, error) {
 	if inv.currency == "PLN" {
 		return grosze(inv.total), nbpRate{}, nil
 	}
+
 	r, err := pitRate(inv.currency, revenueDate(basis, inv), cacheDir)
 	if err != nil {
 		return 0, r, err
 	}
+
 	mid, _ := new(big.Rat).SetString(r.Mid) // checked by valid
 	return grosze(new(big.Rat).Mul(inv.total, mid)), r, nil
 }

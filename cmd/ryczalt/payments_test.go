@@ -12,27 +12,34 @@ func TestPaymentsRoundTrip(t *testing.T) {
 	p := func(id, on, period, kind string, g int64) payment {
 		return payment{id: id, paidOn: day(t, on), period: day(t, period+"-01"), kind: kind, grosze: g}
 	}
+
 	if _, err := appendPayments(root, []payment{p("a", "2026-11-18", "2026-10", "social", 42086), p("b", "2026-11-18", "2026-10", "health", 83058)}); err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := appendPayments(root, []payment{p("c", "2026-11-20", "2026-10", "ryczalt", 175800)}); err != nil {
 		t.Fatal(err)
 	}
+
 	// a void cancels; a December payment lands in next year's file
 	if _, err := appendPayments(root, []payment{{id: "d", paidOn: day(t, "2026-11-21"), period: day(t, "2026-10-01"), kind: "void", voids: "c"}}); err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := appendPayments(root, []payment{p("e", "2027-01-20", "2026-12", "social", 42086)}); err != nil {
 		t.Fatal(err)
 	}
+
 	ps, warns, err := readPayments(root)
 	if err != nil || len(warns) > 0 {
 		t.Fatal(err, warns)
 	}
+
 	var ids []string
 	for _, x := range ps {
 		ids = append(ids, x.id)
 	}
+
 	if strings.Join(ids, ",") != "a,b,e" {
 		t.Errorf("got %v, want a,b,e", ids)
 	}
@@ -42,6 +49,7 @@ func TestPaymentsRoundTrip(t *testing.T) {
 	if _, _, ok := paidFor(ps, day(t, "2026-10-01"), "ryczalt"); ok {
 		t.Error("the voided ryczalt payment still counts")
 	}
+
 	files, _ := filepath.Glob(filepath.Join(root, "*", "payments.*.csv"))
 	if len(files) != 2 {
 		t.Errorf("want one file per year paid, got %v", files)
@@ -60,6 +68,7 @@ func TestReadPaymentsProblems(t *testing.T) {
 		"wrong head":  {"id,date\n", "first line must be"},
 		"short field": {head + "x,2026-11-18\n", "wrong number of fields"},
 	}
+
 	// a damaged file is left out with a warning; the other files still count
 	for name, c := range cases {
 		root := writeArchive(t, map[string]string{"2026/payments.box.csv": c.body,
@@ -76,6 +85,7 @@ func TestReadPaymentsProblems(t *testing.T) {
 		"2026/payments.b.csv": head + "x,2026-11-18,2026-10,social,5,\n",
 		"2026/payments.a.sync-conflict-20261118-120000-ABCDEFG.csv": head,
 	})
+
 	ps, warns, err := readPayments(root)
 	if err != nil || len(ps) != 1 || len(warns) != 2 {
 		t.Errorf("got %d payments, warnings %q, %v", len(ps), warns, err)
@@ -88,16 +98,19 @@ func TestMonthStateWithPayments(t *testing.T) {
 		social: amount{42086, official}, health: amount{83058, official}, fpfs: amount{0, official},
 		ryczalt: amount{175800, official},
 	}
+
 	paid := m
 	paid.zusPaid, paid.zusPaidOn = 125144, day(t, "2026-11-18")
 	paid.ryczPaid, paid.ryczPaidOn = true, day(t, "2026-11-20")
 	lateRycz := paid
 	lateRycz.ryczPaidOn = day(t, "2026-11-24")
+
 	partial := m
 	partial.zusPaid = 42086 // social only
 	partial.ryczPaid, partial.ryczPaidOn = true, day(t, "2026-11-20")
 	zusOnly := m
 	zusOnly.zusPaid, zusOnly.zusPaidOn = 125144, day(t, "2026-11-18")
+
 	cases := []struct {
 		name        string
 		m           month
@@ -111,6 +124,7 @@ func TestMonthStateWithPayments(t *testing.T) {
 		{"zus paid early", zusOnly, "2026-11-19", "due tomorrow, zus paid", "WARN"},
 		{"all paid before due", paid, "2026-11-20", "", "OK"},
 	}
+
 	for _, c := range cases {
 		if text, level := monthState(c.m, day(t, c.today)); text != c.text || level != c.level {
 			t.Errorf("%s: got %q %q, want %q %q", c.name, text, level, c.text, c.level)
@@ -124,9 +138,11 @@ func TestAppendAfterOpenLastLine(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, "2026", "payments.box.csv"), filepath.Join(root, "2026", "payments."+safeHost(host)+".csv")); err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := appendPayments(root, []payment{{id: "b", paidOn: day(t, "2026-11-18"), period: day(t, "2026-10-01"), kind: "health", grosze: 83058}}); err != nil {
 		t.Fatal(err)
 	}
+
 	ps, warns, err := readPayments(root)
 	if err != nil || len(warns) > 0 || len(ps) != 2 {
 		t.Errorf("got %d payments, %q, %v", len(ps), warns, err)

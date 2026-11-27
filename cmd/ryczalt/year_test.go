@@ -29,32 +29,39 @@ func TestSettleYear(t *testing.T) {
 		invs = append(invs, invoice{number: start.Format("INV-2006-01"), issued: start.AddDate(0, 1, 0),
 			serviceEnd: start.AddDate(0, 1, -1), currency: "EUR", total: ratOf(333300)})
 	}
+
 	c := config{rate: "12", revenueBasis: "period_end", businessStart: day(t, "2026-01-01"),
 		preferentialUntil: day(t, "2027-12-01"), chorobowa: true}
 	today := day(t, "2027-03-01")
+
 	months, notes := buildYear(c, invs, nil, 2026, today, t.TempDir())
 	if len(notes) > 0 {
 		t.Fatal(notes)
 	}
+
 	var pays []payment
 	for _, m := range months {
 		for kind, g := range map[string]int64{"social": m.social.grosze, "health": m.health.grosze, "ryczalt": m.ryczalt.grosze} {
 			pays = append(pays, payment{id: m.start.Format("2006-01") + kind, paidOn: m.due, period: m.start, kind: kind, grosze: g})
 		}
 	}
+
 	months, _ = buildYear(c, invs, pays, 2026, today, t.TempDir()) // now with the payments
 	s := settleYear(c, months, pays, 2026, today)
+
 	got := map[string]int64{"revenue": s.revenue.grosze, "social": s.socialPaid, "health": s.healthPaid,
 		"base": s.base, "tax": s.tax, "advances": s.advances, "result": s.result,
 		"year health": s.healthYear.grosze, "monthly health": s.healthMonthly, "settle": s.healthSettle}
 	want := map[string]int64{"revenue": 15998400, "social": 501798, "health": 780746,
 		"base": 15106200, "tax": 1812700, "advances": 1919800, "result": -107100,
 		"year health": 996693, "monthly health": 863804, "settle": 132889}
+
 	for k, w := range want {
 		if got[k] != w {
 			t.Errorf("%s = %d, want %d", k, got[k], w)
 		}
 	}
+
 	if !s.complete || s.months != 12 || s.bracket != 1 {
 		t.Errorf("complete=%v months=%d bracket=%d", s.complete, s.months, s.bracket)
 	}
@@ -65,6 +72,7 @@ func TestSettleYear(t *testing.T) {
 	if strings.Contains(out, "~") || strings.Contains(out, "estimate") {
 		t.Errorf("a complete year shows no estimate:\n%s", out)
 	}
+
 	for _, want := range []string{
 		"  invoiced                  Jan-Dec      12 of 12 months",
 		"  ZUS paid                  Jan-Dec      12 of 12 months",
@@ -113,25 +121,30 @@ func TestYearEstimate(t *testing.T) {
 	oldClock := clock
 	clock = func() time.Time { return time.Date(2026, 11, 25, 12, 0, 0, 0, warsaw) }
 	t.Cleanup(func() { clock = oldClock })
+
 	var invs []invoice
 	for m := 1; m <= 10; m++ {
 		start := time.Date(2026, time.Month(m), 1, 0, 0, 0, 0, time.UTC)
 		invs = append(invs, invoice{number: start.Format("INV-2006-01"), issued: start.AddDate(0, 1, 0),
 			serviceEnd: start.AddDate(0, 1, -1), currency: "EUR", total: ratOf(333300)})
 	}
+
 	c := config{rate: "12", revenueBasis: "period_end", businessStart: day(t, "2026-01-01"),
 		preferentialUntil: day(t, "2027-12-01"), chorobowa: true}
 	months, _ := buildYear(c, invs, nil, 2026, day(t, "2026-11-25"), t.TempDir())
+
 	var pays []payment
 	for _, m := range months[:10] {
 		for kind, g := range map[string]int64{"social": m.social.grosze, "health": m.health.grosze, "ryczalt": m.ryczalt.grosze} {
 			pays = append(pays, payment{paidOn: m.due, period: m.start, kind: kind, grosze: g})
 		}
 	}
+
 	ext, extPays, ok := fullYear(c, months, pays, 2026)
 	if !ok || len(ext) != 12 {
 		t.Fatalf("got %d months", len(ext))
 	}
+
 	// the same whole year as TestSettleYear, so the same results
 	est := settleYear(c, ext, extPays, 2026, day(t, "2026-12-31"))
 	if est.result != -107100 || est.healthSettle != 132889 || est.months != 12 {
@@ -144,9 +157,11 @@ func TestHealthCliff(t *testing.T) {
 	oldClock := clock
 	clock = func() time.Time { return time.Date(2026, 11, 25, 12, 0, 0, 0, warsaw) }
 	t.Cleanup(func() { clock = oldClock })
+
 	c := config{rate: "12", revenueBasis: "period_end", businessStart: day(t, "2026-01-01"),
 		preferentialUntil: day(t, "2027-12-01"), chorobowa: true}
 	today := day(t, "2026-11-25")
+
 	cliff := func(eurCents int64) (finding, bool) {
 		var invs []invoice
 		for m := 1; m <= 10; m++ {
@@ -154,17 +169,21 @@ func TestHealthCliff(t *testing.T) {
 			invs = append(invs, invoice{number: start.Format("INV-2006-01"), issued: start.AddDate(0, 1, 0),
 				serviceEnd: start.AddDate(0, 1, -1), currency: "EUR", total: ratOf(eurCents)})
 		}
+
 		months, _ := buildYear(c, invs, nil, 2026, today, t.TempDir())
 		return healthCliff(c, months, nil, 2026, today)
 	}
+
 	// 3333 EUR a month: ~155k for the year, far from both lines
 	if f, ok := cliff(333300); ok {
 		t.Errorf("no warning expected, got %q", f.text)
 	}
+
 	// 6175 EUR a month (24 700 PLN): ~291k for the year, a month short of 300k
 	if f, ok := cliff(617500); !ok || !strings.Contains(f.text, "below the 300k line") {
 		t.Errorf("want a warning below 300k, got %q %v", f.text, ok)
 	}
+
 	// 6400 EUR a month (25 600 PLN): ~302k, just over
 	if f, ok := cliff(640000); !ok || !strings.Contains(f.text, "only") || !strings.Contains(f.text, "above the 300k line") {
 		t.Errorf("want a warning just above 300k, got %q %v", f.text, ok)

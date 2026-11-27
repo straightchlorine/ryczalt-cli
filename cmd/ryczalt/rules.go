@@ -64,12 +64,14 @@ func staleRules(now time.Time) []string {
 	if now.Month() == time.January {
 		return nil
 	}
+
 	var out []string
 	for _, k := range ruleKeys {
 		if _, st := lookup(now.Year(), k[0]); st != official {
 			out = append(out, fmt.Sprintf("%d %s is %s", now.Year(), k[0], st))
 		}
 	}
+
 	return out
 }
 
@@ -96,10 +98,12 @@ func lookup(year int, key string) (*big.Rat, status) {
 	if !ok {
 		return nil, unknown
 	}
+
 	v, ok := new(big.Rat).SetString(r.value)
 	if !ok {
 		panic(fmt.Sprintf("rules %d %s: bad value %q", year, key, r.value))
 	}
+
 	return v, r.status
 }
 
@@ -112,6 +116,7 @@ func grosze(pln *big.Rat) int64 {
 	if pln.Sign() < 0 {
 		return -n
 	}
+
 	return n
 }
 
@@ -125,6 +130,7 @@ func contribution(base *big.Rat, rates ...*big.Rat) int64 {
 	for _, r := range rates {
 		sum += grosze(new(big.Rat).Mul(b, r))
 	}
+
 	return sum
 }
 
@@ -160,19 +166,23 @@ func socialMonthly(year int, preferential, chorobowa bool) (social, fpfs amount)
 	if preferential {
 		key, share = "minimum_wage", big.NewRat(30, 100)
 	}
+
 	w, st := lookup(year, key)
 	if st == unknown {
 		return amount{}, amount{}
 	}
+
 	base := new(big.Rat).Mul(w, share)
 	rates := []*big.Rat{rateEmerytalna, rateRentowa, rateWypadkowa}
 	if chorobowa {
 		rates = append(rates, rateChorobowa)
 	}
+
 	social, fpfs = amount{contribution(base, rates...), st}, amount{0, st}
 	if !preferential {
 		fpfs.grosze = contribution(base, rateFPFS)
 	}
+
 	return social, fpfs
 }
 
@@ -182,17 +192,21 @@ func plnText(a amount) string {
 	if a.status == unknown {
 		return "n/a"
 	}
+
 	g, sign := a.grosze, ""
 	if g < 0 {
 		g, sign = -g, "-"
 	}
+
 	s := fmt.Sprintf("%d.%02d", g/100, g%100)
 	for i := strings.IndexByte(s, '.') - 3; i > 0; i -= 3 {
 		s = s[:i] + " " + s[i:]
 	}
+
 	if a.status == forecast {
 		sign = "~" + sign
 	}
+
 	return sign + s
 }
 
@@ -212,6 +226,7 @@ func cmdRules(args []string) error {
 	case len(args) > 1:
 		return exitError{2, errors.New("usage: ryczalt rules [YEAR]")}
 	}
+
 	w := newReport(os.Stdout)
 	printRules(w, year)
 	return w.flush()
@@ -219,6 +234,7 @@ func cmdRules(args []string) error {
 
 func printRules(w *report, year int) {
 	w.printf("Rules for %d, in PLN\n", year)
+
 	var unknowns []string
 	hasForecast := false
 	for _, k := range ruleKeys {
@@ -227,10 +243,12 @@ func printRules(w *report, year int) {
 		if st != unknown {
 			val = plnText(amount{grosze(v), st})
 		}
+
 		hasForecast = hasForecast || st == forecast
 		if st == unknown {
 			unknowns = append(unknowns, k[1])
 		}
+
 		w.println(strings.TrimRight(
 			fmt.Sprintf("  %-36s %10s  %-8s  %s", k[1], val, st, rules[year][k[0]].source),
 			" ",
@@ -242,9 +260,11 @@ func printRules(w *report, year int) {
 	row := func(label string, a amount, note string) {
 		w.println(strings.TrimRight(fmt.Sprintf("  %-36s %10s  %s", label, plnText(a), note), " "))
 	}
+
 	row("health, yearly revenue up to 60 000", healthMonthly(year, 0), "")
 	row("health, up to 300 000", healthMonthly(year, 1), "")
 	row("health, above 300 000", healthMonthly(year, 2), "")
+
 	pref, _ := socialMonthly(year, true, true)
 	prefNo, _ := socialMonthly(year, true, false)
 	without := func(a amount) string {
@@ -253,6 +273,7 @@ func printRules(w *report, year int) {
 		}
 		return plnText(a) + " without chorobowa"
 	}
+
 	row("social, preferential", pref, without(prefNo))
 	full, fpfs := socialMonthly(year, false, true)
 	fullNo, _ := socialMonthly(year, false, false)
@@ -266,6 +287,7 @@ func printRules(w *report, year int) {
 			u,
 		)
 	}
+
 	if hasForecast {
 		w.printf("%s ~ marks an amount based on a forecast, not the official figure\n",
 			tag(w, cyan, "INFO"),

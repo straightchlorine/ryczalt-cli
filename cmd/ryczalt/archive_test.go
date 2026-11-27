@@ -15,6 +15,7 @@ func faFrom(seller, number, issued, p6, extra string) string {
 	if from, to, ok := strings.Cut(p6, ".."); ok {
 		period = "<OkresFa><P_6_Od>" + from + "</P_6_Od><P_6_Do>" + to + "</P_6_Do></OkresFa>"
 	}
+
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <Faktura xmlns="http://crd.gov.pl/wzor/2025/06/25/13775/">
 <Podmiot1><DaneIdentyfikacyjne><NIP>` + seller + `</NIP></DaneIdentyfikacyjne></Podmiot1>
@@ -30,6 +31,7 @@ func upo(docs ...[2]string) string {
 		s += `<Dokument><NumerKSeFDokumentu>` + d[1] + `</NumerKSeFDokumentu><NumerFaktury>` + d[0] +
 			`</NumerFaktury><TrybWysylki>Offline</TrybWysylki></Dokument>`
 	}
+
 	return s + `</Potwierdzenie>`
 }
 
@@ -45,10 +47,12 @@ func writeArchive(t *testing.T, files map[string]string) string {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	return root
 }
 
@@ -58,6 +62,7 @@ func summary(got []invoice) string {
 		lines = append(lines, strings.Join([]string{i.number, i.issued.Format("2006-01-02"),
 			i.serviceEnd.Format("2006-01-02"), i.currency, i.total.FloatString(2), i.source, i.ksefNumber, i.ksefMode}, " "))
 	}
+
 	return strings.Join(lines, "\n")
 }
 
@@ -92,10 +97,12 @@ func TestReadArchive(t *testing.T) {
 		"2026-11/a212z261030.xml": `<?xml version="1.0" encoding="ISO-8859-2"?><tabela_kursow typ="A"/>`,
 		"2026-11/notes.xml":       "not xml at all",
 	})
+
 	got, found, err := readArchive(root, testNIP)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	want := strings.Join([]string{
 		"INV-03 2026-03-01 2026-02-28 EUR 3333.00 2026-03/invoice.json  ",
 		"INV-04 2026-04-02 2026-03-31 EUR 3333.00 2026-05/KSEF-04.xml KSEF-04 ",
@@ -104,9 +111,11 @@ func TestReadArchive(t *testing.T) {
 		"INV-07 2026-07-01 2026-06-30 EUR 3333.00 2026-07/ksef-INV-07.xml  ",
 		"INV-11 2026-11-01 2026-10-31 EUR 3333.00 2026-11/ksef-INV-11.xml KSEF-11 Offline",
 	}, "\n")
+
 	if got := summary(got); got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
+
 	wantFound := strings.Join([]string{
 		"warn archive 2026-01/invoice.json: no invoice number or date; skipped",
 		"check security 2026-04/.ksef/meta.json: KSeF session key in clear text; delete aes_key_hex and aes_iv_hex",
@@ -115,6 +124,7 @@ func TestReadArchive(t *testing.T) {
 		"info drafts INV-04: 2026-04/invoice.json is dated 2026-04-01, the XML sent to KSeF 2026-04-02",
 		"warn archive INV-07: 2026-07/invoice.json differs from the XML sent to KSeF (in 2026-07) in total (3300.00 vs 3333.00); using the XML",
 	}, "\n")
+
 	if got := findingsText(found); got != wantFound {
 		t.Errorf("findings:\n%s\nwant\n%s", got, wantFound)
 	}
@@ -132,6 +142,7 @@ func TestCheckInvoices(t *testing.T) {
 	inv := func(number, issued, end, ksefNumber, mode string) invoice {
 		return invoice{number: number, issued: day(t, issued), serviceEnd: day(t, end), ksefNumber: ksefNumber, ksefMode: mode}
 	}
+
 	got := findingsText(checkInvoices([]invoice{
 		inv("OLD", "2026-03-02", "2026-02-28", "", ""), // before KSeF: nothing to check
 		inv("NONE", "2026-04-01", "2026-03-31", "", ""),
@@ -139,12 +150,14 @@ func TestCheckInvoices(t *testing.T) {
 		inv("OFF", "2026-06-01", "2026-05-31", "K", "Offline"),
 		inv("ON", "2026-07-01", "2026-06-30", "K", "Online"),
 	}))
+
 	want := strings.Join([]string{
 		"check KSeF NONE: no KSeF number in the archive (UPO or .ksef/meta.json)",
 		"info KSeF META: no UPO kept, the KSeF number comes from .ksef/meta.json",
 		"check invoicing META: issued 2026-05-23, after the deadline 2026-05-15 (art. 106i ust. 1 ustawy o VAT)",
 		"info KSeF OFF: KSeF recorded it as Offline, sent after its issue date",
 	}, "\n")
+
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
@@ -159,13 +172,16 @@ func TestReadArchiveEdges(t *testing.T) {
 		"2026-06/upo.xml": upo([2]string{"INV-A", "K-A"}, [2]string{"INV-B", "K-B"}),
 		"elsewhere/c.xml": fa("INV-C", "2026-07-01", "2026-06-30"),
 	})
+
 	if err := os.Symlink(filepath.Join(root, "elsewhere"), filepath.Join(root, "2026-07")); err != nil {
 		t.Fatal(err)
 	}
+
 	got, found, err := readArchive(root, testNIP)
 	if err != nil || len(found) > 0 {
 		t.Fatal(err, found)
 	}
+
 	want := "INV-A 2026-06-01 2026-05-31 EUR 3333.00 2026-06/a.xml K-A Offline\n" +
 		"INV-B 2026-06-01 2026-05-31 EUR 3333.00 2026-06/b.xml K-B Offline\n" +
 		"INV-C 2026-07-01 2026-06-30 EUR 3333.00 2026-07/c.xml  "
@@ -197,6 +213,7 @@ func TestReadArchiveErrors(t *testing.T) {
 			"2026-06/c.xml": strings.Replace(fa("INV-C", "2026-06-01", "2026-05-31"), "EUR", "", 1),
 		}, "without a readable"},
 	}
+
 	for name, c := range cases {
 		_, _, err := readArchive(writeArchive(t, c.files), testNIP)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
@@ -210,6 +227,7 @@ func TestReadArchiveErrors(t *testing.T) {
 		"2026-04/invoice.json": invoify("INV-1", "2026-03-05T00:00:00.000Z"),
 		"2026-06/v.xml":        faFrom(testNIP, "INV-V", "2026-06-01", "2026-05-31", "<P_14_1>0.00</P_14_1>"),
 	})
+
 	if got, _, err := readArchive(root, testNIP); err != nil || len(got) != 2 {
 		t.Errorf("got %d invoices, %v", len(got), err)
 	}
@@ -227,10 +245,12 @@ func TestReadArchiveSkips(t *testing.T) {
 		"2026-06/mine.xml":     fa("INV-06", "2026-06-01", "2026-05-31"),
 		"2026-06/nothing.json": "{}",
 	})
+
 	got, found, err := readArchive(root, testNIP)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("got %d invoices, %v", len(got), err)
 	}
+
 	text := findingsText(found)
 	for _, want := range []string{"warn archive 2026-06/l.xml: not readable XML", "warn archive 2026-06/t.xml: not readable XML",
 		"info archive 2026-06/kor.xml: invoice P-2 was issued by NIP 1234563218", "info archive 2026-06/vat.xml: invoice P-1 was issued by NIP 1234563218"} {

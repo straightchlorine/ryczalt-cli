@@ -63,6 +63,7 @@ func zusPhase(c config, m time.Time) string {
 	case !c.preferentialUntil.IsZero() && !m.After(c.preferentialUntil):
 		return "preferential"
 	}
+
 	return "full"
 }
 
@@ -93,6 +94,7 @@ func buildYear(
 	if c.businessStart.After(first) {
 		first = c.businessStart
 	}
+
 	thisMonth := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
 
 	byMonth := map[time.Time][]invoice{}
@@ -100,6 +102,7 @@ func buildYear(
 		d := revenueDate(c.revenueBasis, inv)
 		m := time.Date(d.Year(), d.Month(), 1, 0, 0, 0, 0, time.UTC)
 		byMonth[m] = append(byMonth[m], inv)
+
 		if d.Year() == year && m.Before(first) {
 			notes = append(
 				notes,
@@ -111,6 +114,7 @@ func buildYear(
 
 	rate, _ := new(big.Rat).SetString(c.rate)
 	rate.Quo(rate, big.NewRat(100, 1))
+
 	var months []month
 	cumRevenue, cumSocial, prevTax := amount{0, official}, int64(0), int64(0)
 	for m := first; m.Year() == year && !m.After(thisMonth); m = m.AddDate(0, 1, 0) {
@@ -118,12 +122,14 @@ func buildYear(
 		for _, inv := range byMonth[m] {
 			row.invoices = append(row.invoices, inv.number)
 			row.invoiced = true
+
 			g, _, err := revenuePLN(inv, c.revenueBasis, cacheDir)
 			if err != nil {
 				notes = append(notes, fmt.Sprintf("%s: %v", inv.number, err))
 				row.revenue.status = unknown
 				continue
 			}
+
 			row.revenue.grosze += g
 		}
 
@@ -140,18 +146,24 @@ func buildYear(
 		// NOTE: those are assumed paid on time until payments are recorded
 		cumRevenue.grosze += row.revenue.grosze
 		cumRevenue.status = min(cumRevenue.status, row.revenue.status)
-		cumSocial += row.social.grosze
+		if !c.suspended(m) {
+			cumSocial += row.social.grosze
+		}
+
 		base := cumRevenue.grosze - cumSocial
 		for row.bracket < 2 && base > healthThresholds[row.bracket] {
 			row.bracket++
 		}
+
 		row.health = healthMonthly(year, row.bracket)
 		if cumRevenue.status == unknown {
 			row.health.status = unknown
 		}
+
 		if c.suspended(m) {
 			row.suspended = true
 			row.social, row.fpfs, row.health = amount{0, official}, amount{0, official}, amount{0, official}
+
 			if row.invoiced {
 				notes = append(notes, fmt.Sprintf("%s: revenue in a suspended month (%s)",
 					strings.Join(row.invoices, ", "), m.Format("2006-01")))
@@ -166,6 +178,7 @@ func buildYear(
 		if !row.invoiced {
 			row.ryczalt.status = unknown
 		}
+
 		prevTax = tax
 
 		row.due = shiftDeadline("PL", time.Date(year, m.Month()+1, 20, 0, 0, 0, 0, time.UTC))
@@ -176,9 +189,11 @@ func buildYear(
 				row.zusPaidOn = on
 			}
 		}
+
 		row.ryczPaidAmt, row.ryczPaidOn, row.ryczPaid = paidFor(pays, m, "ryczalt")
 		months = append(months, row)
 	}
+
 	return months, notes
 }
 
@@ -187,11 +202,13 @@ func monthState(m month, today time.Time) (text string, level string) {
 	if m.suspended && !m.invoiced {
 		return "suspended", ""
 	}
+
 	end := m.start.AddDate(0, 1, 0)
 	invoiceBy := shiftDeadline(
 		"PL",
 		end.AddDate(0, 0, 14),
 	) // the 15th of the next month (art. 106i ust. 1 VAT)
+
 	var unpaid []string
 	if m.zusOpen() {
 		unpaid = append(unpaid, "zus")
@@ -199,7 +216,8 @@ func monthState(m month, today time.Time) (text string, level string) {
 	if m.ryczOwed() {
 		unpaid = append(unpaid, "ryczalt")
 	}
-	late := !today.Before(m.due) && len(unpaid) > 0 && today.After(m.due)
+
+	late := len(unpaid) > 0 && today.After(m.due)
 	switch {
 	case today.Before(end):
 		if m.zusPaid > 0 && !m.zusOpen() {
@@ -223,17 +241,20 @@ func monthState(m month, today time.Time) (text string, level string) {
 	case today.Equal(m.due):
 		return "due today", "WARN"
 	}
+
 	days := int(m.due.Sub(today).Hours() / 24)
 	text = fmt.Sprintf("due in %d days", days)
 	if days == 1 {
 		text = "due tomorrow"
 	}
+
 	if m.zusPaid > 0 && !m.zusOpen() {
 		text += ", zus paid"
 	}
 	if days <= 7 {
 		return text, "WARN"
 	}
+
 	return text, ""
 }
 
@@ -252,9 +273,11 @@ func cmdStatus(args []string) error {
 	if err := parseFlags(fs, args); err != nil {
 		return exitError{2, err}
 	}
+
 	if fs.NArg() > 0 {
 		return exitError{2, fmt.Errorf("status takes no arguments, got %q", fs.Args())}
 	}
+
 	y, mo, d := time.Now().In(warsaw).Date()
 	today := time.Date(y, mo, d, 0, 0, 0, 0, time.UTC)
 	if *todayFlag != "" {
@@ -265,8 +288,10 @@ func cmdStatus(args []string) error {
 				fmt.Errorf("--today wants a date like 2026-11-20, got %q", *todayFlag),
 			}
 		}
+
 		today = t
 	}
+
 	year := today.Year()
 	if *yearFlag != 0 {
 		year = *yearFlag
@@ -276,14 +301,17 @@ func cmdStatus(args []string) error {
 	if err != nil {
 		return err
 	}
+
 	invs, found, err := readArchive(c.archive, c.nip)
 	if err != nil {
 		return err
 	}
+
 	pays, pwarns, err := readPayments(c.archive)
 	if err != nil {
 		return err
 	}
+
 	months, notes := buildYear(c, invs, pays, year, today, cacheDir())
 	found = append(found, asFindings("payments", pwarns)...)
 	found = append(found, asFindings("rates", notes)...)
@@ -291,14 +319,17 @@ func cmdStatus(args []string) error {
 	if f, ok := healthCliff(c, months, pays, year, today); ok {
 		found = append(found, f)
 	}
+
 	w := newReport(os.Stdout)
 	failed := printStatus(w, c, year, today, months, found)
 	if err := w.flush(); err != nil {
 		return err
 	}
+
 	if failed {
 		return errFailed
 	}
+
 	return nil
 }
 
@@ -315,6 +346,7 @@ func printStatus(
 	if len(months) > 0 {
 		shown = months[len(months)-1].start
 	}
+
 	phase := zusPhase(c, shown) + " ZUS"
 	if c.chorobowa {
 		phase += " with chorobowa"
@@ -322,6 +354,7 @@ func printStatus(
 	if c.suspended(shown) {
 		phase = "suspended since " + c.suspendedFrom.Format("2006-01")
 	}
+
 	w.println(paint(w, bold, fmt.Sprintf("ryczalt %d", year)))
 	w.println(paint(w, dim, fmt.Sprintf(
 		"%s %s | %s%% ryczalt | %s | rules %s\n",
@@ -331,6 +364,7 @@ func printStatus(
 		phase,
 		rulesStatus(year),
 	)))
+
 	if len(months) == 0 {
 		w.printf("No months of business in %d up to today.\n", year)
 		return false
@@ -349,6 +383,7 @@ func printStatus(
 	rows := [][]string{
 		{"Month", "Invoice", "Revenue PLN", "Ryczalt*", "Social", "Health", "Due", "State"},
 	}
+
 	levels := []string{""}
 	failed := false
 	for _, m := range months {
@@ -359,6 +394,7 @@ func printStatus(
 				inv += fmt.Sprintf(" +%d", len(m.invoices)-1)
 			}
 		}
+
 		revenue, ryczalt := plnText(m.revenue), plnText(m.ryczalt)
 		if !m.invoiced {
 			revenue = "-"
@@ -366,9 +402,11 @@ func printStatus(
 		if m.ryczalt.status != unknown {
 			ryczalt = strings.TrimSuffix(ryczalt, ".00")
 		}
+
 		social := plnText(
 			amount{m.social.grosze + m.fpfs.grosze, min(m.social.status, m.fpfs.status)},
 		)
+
 		text, level := monthState(m, today)
 		if level != "" {
 			text = strings.TrimSpace(
@@ -379,6 +417,7 @@ func printStatus(
 				) + " " + text,
 			)
 		}
+
 		failed = failed || level == "FAIL"
 		rows = append(rows, []string{
 			m.start.Format("2006-01"), inv, revenue, ryczalt, social,
@@ -388,6 +427,7 @@ func printStatus(
 		})
 		levels = append(levels, level)
 	}
+
 	right := []bool{false, false, true, true, true, true, false, false}
 	printTable(w, rows, right, func(r, col int) string {
 		cell := rows[r][col]
@@ -407,8 +447,10 @@ func printStatus(
 		case col == colState:
 			return ""
 		}
+
 		return ""
 	})
+
 	w.println("\n" + paint(
 		w,
 		dim,
@@ -422,32 +464,40 @@ func printStatus(
 		revenue.grosze += m.revenue.grosze
 		revenue.status = min(revenue.status, m.revenue.status)
 	}
+
 	label := func(s string) string { return paint(w, dim, fmt.Sprintf("%-13s", s)) }
 	w.printf("\n%s %s PLN revenue, health bracket %s\n", label("Year so far"),
 		paint(w, bold, plnText(revenue)), bracketName(months[len(months)-1].bracket))
 
 	if next >= 0 {
 		m := months[next]
+
 		// pad first, colour after, so the amounts end in one column, as in year
 		row := func(name, value, note string, loud bool) {
 			v := fmt.Sprintf("%13s", value)
 			if loud {
 				v = paint(w, bold, v)
 			}
+
 			line := "  " + paint(w, cyan, fmt.Sprintf("%-11s", name)) + v
 			if note != "" {
 				line += "  " + paint(w, dim, note)
 			}
+
 			w.println(line)
 		}
+
 		owed := amount{m.zusOwed(), m.zusDue().status}
 		total := owed
+
 		head := label("Next payment")
 		if m.due.Before(today) {
 			head = paint(w, red, fmt.Sprintf("%-13s", "Overdue"))
 		}
+
 		w.printf("\n%s %s, for %s\n", head,
 			paint(w, bold, m.due.Weekday().String()[:3]+" "+m.due.Format(time.DateOnly)), m.start.Format("2006-01"))
+
 		switch {
 		case !m.zusOpen():
 			row("zus", "", "paid "+m.zusPaidOn.Format(time.DateOnly), false)
@@ -460,6 +510,7 @@ func printStatus(
 		default:
 			row("zus", plnText(owed), "left of "+plnText(m.zusDue()), false)
 		}
+
 		switch {
 		case m.ryczPaid:
 			row("ryczalt", "", "paid "+m.ryczPaidOn.Format(time.DateOnly), false)
@@ -469,21 +520,32 @@ func printStatus(
 		default:
 			row("ryczalt", "", "not yet invoiced", false)
 		}
+
 		row("total", plnText(total), "PLN", true)
 	}
 
-	anyPaid, lastDue := false, -1
+	anyPaid, firstDue, lastDue := false, -1, -1
 	for i, m := range months {
 		anyPaid = anyPaid || m.zusPaid > 0 || m.ryczPaid
+
+		if m.suspended && !m.invoiced {
+			continue // nothing was due
+		}
+
 		if m.due.Before(today) {
+			if firstDue < 0 {
+				firstDue = i
+			}
 			lastDue = i
 		}
 	}
+
 	if !anyPaid && lastDue >= 0 {
-		rng := months[0].start.Format("2006-01")
-		if lastDue > 0 {
+		rng := months[firstDue].start.Format("2006-01")
+		if lastDue > firstDue {
 			rng += ".." + months[lastDue].start.Format("2006-01")
 		}
+
 		w.printf("\n%s no payments recorded yet; if all were paid on time: ryczalt paid --on-due %s\n",
 			tag(w, cyan, "INFO"),
 			rng,
@@ -496,19 +558,23 @@ func printStatus(
 			more++
 		}
 	}
+
 	if more < len(found) {
 		w.println()
 		printFindings(w, found, levelWarn)
 	}
+
 	if more > 0 {
 		notes := "notes"
 		if more == 1 {
 			notes = "note"
 		}
+
 		w.printf("\n%s\n",
 			paint(w, dim, fmt.Sprintf("%d more %s about the archive: ryczalt check", more, notes)),
 		)
 	}
+
 	return failed
 }
 
@@ -526,23 +592,29 @@ func cmdCheck(args []string) error {
 	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
+
 	if flags.NArg() > 0 {
 		return exitError{2, errors.New("usage: ryczalt check [-c CONFIG]")}
 	}
+
 	c, err := loadConfig(*cfgFlag)
 	if err != nil {
 		return err
 	}
+
 	invs, found, err := readArchive(c.archive, c.nip)
 	if err != nil {
 		return err
 	}
+
 	pays, pwarns, err := readPayments(c.archive)
 	if err != nil {
 		return err
 	}
+
 	found = append(found, asFindings("payments", pwarns)...)
 	found = append(found, checkInvoices(invs)...)
+
 	w := newReport(os.Stdout)
 	w.println(paint(w, bold, "ryczalt check"))
 	w.println(paint(
@@ -551,16 +623,20 @@ func cmdCheck(args []string) error {
 		fmt.Sprintf("%s | %d invoices | %d payments\n", c.archive, len(invs), len(pays)),
 	),
 	)
+
 	warned := len(found) > 0 && printFindings(w, found, levelWarn, levelCheck, levelInfo)
 	if len(found) == 0 {
 		w.println(tag(w, green, "OK"), "nothing to report")
 	}
+
 	if err := w.flush(); err != nil {
 		return err
 	}
+
 	if warned {
 		return errFailed
 	}
+
 	return nil
 }
 

@@ -42,25 +42,31 @@ func settleYear(c config, months []month, pays []payment, year int, today time.T
 	s := yearSheet{year: year, revenue: amount{0, official}, complete: true}
 	rate := map[string]int64{"17": 1700, "15": 1500, "14": 1400, "12.5": 1250, "12": 1200, "10": 1000,
 		"8.5": 850, "5.5": 550, "3": 300}[c.rate] // basis points
+
 	for _, m := range months {
 		if m.start.Year() != year {
 			continue
 		}
+
 		s.revenue.grosze += m.revenue.grosze
 		s.revenue.status = min(s.revenue.status, m.revenue.status)
+
 		if m.suspended {
 			continue // not insured: no health contribution, no invoice expected
 		}
+
 		s.months++
 		s.healthMonthly += m.health.grosze
 		if !m.invoiced || today.Before(m.start.AddDate(0, 1, 0)) {
 			s.complete = false
 		}
 	}
+
 	if len(months) == 0 || months[len(months)-1].start.Month() != time.December &&
 		!c.suspended(months[len(months)-1].start.AddDate(0, 1, 0)) {
 		s.complete = false
 	}
+
 	for _, p := range pays {
 		if p.paidOn.Year() == year {
 			switch p.kind {
@@ -70,6 +76,7 @@ func settleYear(c config, months []month, pays []payment, year int, today time.T
 				s.healthPaid += p.grosze
 			}
 		}
+
 		if p.period.Year() == year {
 			switch p.kind {
 			case "ryczalt":
@@ -89,12 +96,14 @@ func settleYear(c config, months []month, pays []payment, year int, today time.T
 	for s.bracket < 2 && s.healthBase > healthThresholds[s.bracket] {
 		s.bracket++
 	}
+
 	// ZUS takes 9% of the year's base, so this can differ from 12 monthly
 	// amounts by a few grosze (Poradnik ZUS DRA, block XII, example 14)
 	b := healthBase(year, s.bracket)
 	s.healthYearBase = amount{int64(s.months) * b.grosze, b.status}
 	s.healthYear = amount{grosze(new(big.Rat).Mul(ratOf(s.healthYearBase.grosze), rateHealth)), b.status}
 	s.healthSettle = s.healthYear.grosze - s.healthMonthly
+
 	return s
 }
 
@@ -105,6 +114,7 @@ func cmdYear(args []string) error {
 	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
+
 	today := todayWarsaw()
 	if *todayFlag != "" {
 		t, err := time.Parse(time.DateOnly, *todayFlag)
@@ -113,37 +123,44 @@ func cmdYear(args []string) error {
 		}
 		today = t
 	}
+
 	// until the health settlement in May, the year to settle is last year
 	year := today.Year()
 	if today.Month() <= time.May {
 		year--
 	}
+
 	switch {
 	case flags.NArg() == 1 && yearArg.MatchString(flags.Arg(0)):
 		year, _ = strconv.Atoi(flags.Arg(0)) // four digits, checked
 	case flags.NArg() > 0:
-		return exitError{2, errors.New("usage: ryczalt year [-c CONFIG] [YEAR]")}
+		return exitError{2, errors.New("usage: ryczalt year [-c CONFIG] [--today DATE] [YEAR]")}
 	}
 
 	c, err := loadConfig(*cfgFlag)
 	if err != nil {
 		return err
 	}
+
 	invs, found, err := readArchive(c.archive, c.nip)
 	if err != nil {
 		return err
 	}
+
 	pays, pwarns, err := readPayments(c.archive)
 	if err != nil {
 		return err
 	}
+
 	months, notes := buildYear(c, invs, pays, year, today, cacheDir())
 	found = append(found, asFindings("payments", pwarns)...)
 	found = append(found, asFindings("rates", notes)...)
 	if f, ok := healthCliff(c, months, pays, year, today); ok {
 		found = append(found, f)
 	}
+
 	s := settleYear(c, months, pays, year, today)
+
 	// last December's ZUS is paid in January and deducted this year
 	if dec := time.Date(year-1, 12, 1, 0, 0, 0, 0, time.UTC); c.businessStart.Before(dec.AddDate(0, 1, 0)) {
 		if _, _, ok := paidFor(pays, dec, "social"); !ok {
@@ -158,10 +175,12 @@ func cmdYear(args []string) error {
 
 	w := newReport(os.Stdout)
 	printYear(w, c, s, months, pays, today)
+
 	if hasWarn := len(found) > 0; hasWarn {
 		w.println()
 		printFindings(w, found, levelWarn)
 	}
+
 	return w.flush()
 }
 
@@ -174,12 +193,14 @@ func monthRanges(ms []time.Time, year int) string {
 		}
 		return m.Format("Jan")
 	}
+
 	var parts []string
 	for i := 0; i < len(ms); {
 		j := i
 		for j+1 < len(ms) && ms[j+1].Equal(ms[j].AddDate(0, 1, 0)) {
 			j++
 		}
+
 		switch {
 		case i == j:
 			parts = append(parts, name(ms[i]))
@@ -188,11 +209,14 @@ func monthRanges(ms []time.Time, year int) string {
 		default:
 			parts = append(parts, name(ms[i])+"-"+name(ms[j]))
 		}
+
 		i = j + 1
 	}
+
 	if len(parts) == 0 {
 		return "none"
 	}
+
 	return strings.Join(parts, ", ")
 }
 
@@ -206,11 +230,14 @@ func fullYear(c config, months []month, pays []payment, year int) ([]month, []pa
 			last = m
 		}
 	}
+
 	if !last.invoiced || len(months) == 0 {
 		return nil, nil, false
 	}
+
 	rate, _ := new(big.Rat).SetString(c.rate)
 	rate.Quo(rate, big.NewRat(100, 1))
+
 	ext := slices.Clone(months)
 	for m := months[len(months)-1].start.AddDate(0, 1, 0); m.Year() == year; m = m.AddDate(0, 1, 0) {
 		next := month{start: m, due: shiftDeadline("PL", m.AddDate(0, 1, 19))}
@@ -220,14 +247,17 @@ func fullYear(c config, months []month, pays []payment, year int) ([]month, []pa
 			ext = append(ext, next)
 			continue
 		}
+
 		switch zusPhase(c, m) {
 		case "ulga":
 			next.social, next.fpfs = amount{0, official}, amount{0, official}
 		default:
 			next.social, next.fpfs = socialMonthly(year, zusPhase(c, m) == "preferential", c.chorobowa)
 		}
+
 		ext = append(ext, next)
 	}
+
 	extPays := slices.Clone(pays)
 	for i := range ext {
 		m := &ext[i]
@@ -237,26 +267,31 @@ func fullYear(c config, months []month, pays []payment, year int) ([]month, []pa
 		if m.suspended {
 			continue // nothing earned, nothing due
 		}
+
 		if !m.invoiced {
 			m.invoiced, m.revenue, m.bracket = true, last.revenue, last.bracket
 			m.health = healthMonthly(year, last.bracket)
 			m.ryczalt = amount{wholePLN(grosze(new(big.Rat).Mul(ratOf(last.revenue.grosze), rate))), official}
 		}
+
 		pay := func(kind string, g int64) {
 			if _, _, ok := paidFor(pays, m.start, kind); !ok && g > 0 {
 				extPays = append(extPays, payment{paidOn: m.due, period: m.start, kind: kind, grosze: g})
 			}
 		}
+
 		pay("social", m.social.grosze)
 		pay("health", m.health.grosze)
 		pay("ryczalt", m.ryczalt.grosze)
 	}
+
 	return ext, extPays, true
 }
 
 func printYear(w *report, c config, s yearSheet, months []month, pays []payment, today time.Time) {
 	pln := func(g int64) string { return plnText(amount{g, official}) }
 	short := func(t time.Time) string { return t.Weekday().String()[:3] + " " + t.Format(time.DateOnly) }
+
 	// pad first, colour after, so every number ends in the same column
 	// "- ..." and "= ..." rows sit a step in, under the line they work on
 	row := func(label, value, note string, loud bool) {
@@ -264,19 +299,24 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 		if loud {
 			v = paint(w, bold, v)
 		}
+
 		indent := ""
 		if strings.HasPrefix(label, "- ") || strings.HasPrefix(label, "= ") || strings.HasPrefix(label, "+ ") {
 			indent = "  "
 		}
+
 		line := "  " + indent + paint(w, cyan, fmt.Sprintf("%-*s", 26-len(indent), label)) + v
 		if note != "" {
 			line += "  " + paint(w, dim, note)
 		}
+
 		w.println(line)
 	}
+
 	text := func(label, value string) {
 		w.println("  " + paint(w, cyan, fmt.Sprintf("%-26s", label)) + value)
 	}
+
 	head := func(title, note string) {
 		if note != "" {
 			note = "  " + paint(w, dim, note)
@@ -291,10 +331,12 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 			all = append(all, m)
 		}
 	}
+
 	for _, m := range months {
 		if m.start.Year() != s.year {
 			continue
 		}
+
 		if m.invoiced {
 			invoiced = append(invoiced, m.start)
 		}
@@ -305,9 +347,11 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 			zusPaid = append(zusPaid, m.start)
 		}
 	}
+
 	count := func(ms []time.Time) string {
 		return fmt.Sprintf("%-12s %2d of %d months", monthRanges(ms, s.year), len(ms), len(all))
 	}
+
 	// ZUS paid during the year, whatever month it was for: what is deducted
 	var zusIn []time.Time
 	for _, p := range pays {
@@ -318,6 +362,7 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 	slices.SortFunc(zusIn, func(a, b time.Time) int { return a.Compare(b) })
 
 	w.println(paint(w, bold, fmt.Sprintf("ryczalt year %d", s.year)))
+
 	state := "the year is complete"
 	switch thisMonth := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC); {
 	case c.suspended(thisMonth) && thisMonth.Year() == s.year:
@@ -325,16 +370,19 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 	case !s.complete:
 		state = "year not over: figures so far, and a year-end estimate"
 	}
+
 	w.println(paint(w, dim, fmt.Sprintf("%s | %s%% ryczalt | %s\n", short(today), c.rate, state)))
 
 	head(fmt.Sprintf("Where %d stands", s.year), "")
 	text("invoiced", count(invoiced))
 	text("ryczalt paid", count(ryczPaid))
+
 	zus := count(zusPaid)
 	if extra := slices.DeleteFunc(slices.Clone(zusIn), func(m time.Time) bool { return m.Year() == s.year }); len(extra) > 0 {
 		zus += " + " + monthRanges(extra, s.year)
 	}
 	text("ZUS paid", zus)
+
 	for _, m := range months {
 		if m.start.Year() == s.year && !m.suspended && (m.zusOpen() || m.ryczOwed() || !m.invoiced) {
 			next := "ZUS by " + short(m.due)
@@ -344,9 +392,11 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 			case !m.invoiced:
 				next += ", ryczalt once invoiced"
 			}
+
 			if !m.zusOpen() {
 				next = strings.Replace(next, "ZUS by "+short(m.due)+", ", "", 1)
 			}
+
 			text("next", fmt.Sprintf("%-12s %s", m.start.Format("Jan"), next))
 			break
 		}
@@ -354,6 +404,7 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 
 	from := shiftDeadline("PL", time.Date(s.year+1, 2, 15, 0, 0, 0, 0, time.UTC))
 	to := shiftDeadline("PL", time.Date(s.year+1, 4, 30, 0, 0, 0, 0, time.UTC))
+
 	w.println()
 	head(fmt.Sprintf("PIT-28 for %d", s.year), "filed "+from.Format(time.DateOnly)+" to "+to.Format(time.DateOnly))
 	row("revenue", plnText(s.revenue), "invoiced "+monthRanges(invoiced, s.year), false)
@@ -362,12 +413,14 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 	row("= taxable base", pln(s.base), "rounded to whole PLN", false)
 	row("ryczalt "+c.rate+"%", pln(s.tax), "", false)
 	row("- ryczalt already paid", "-"+pln(s.advances), monthRanges(ryczPaid, s.year)+", in full", false)
+
 	result := func(label string, r int64) (string, string) {
 		if r > 0 {
 			return label + "to pay", pln(r)
 		}
 		return label + "refund", pln(-r)
 	}
+
 	l, v := result("= ", s.result)
 	if !s.complete {
 		l += " so far"
@@ -393,6 +446,7 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 		}
 		return v
 	}
+
 	due := shiftDeadline("PL", time.Date(s.year+1, 5, 20, 0, 0, 0, 0, time.UTC))
 	w.println()
 	if estimated {
@@ -401,10 +455,12 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 	} else {
 		head(fmt.Sprintf("Health settlement for %d", s.year), "due "+due.Format(time.DateOnly)+" with the ZUS DRA for April")
 	}
+
 	row("revenue", est(plnText(h.revenue)), "", false)
 	row("- social ZUS paid", est("-"+pln(h.socialPaid)), "paid in "+strconv.Itoa(s.year), false)
 	row("= yearly base", est(pln(wholePLN(h.healthBase))), "sets the bracket: "+bracketName(h.bracket), false)
 	row("due for the year", plnText(h.healthYear), fmt.Sprintf("9%% of %d x %s", h.months, plnText(healthBase(s.year, h.bracket))), false)
+
 	billed := healthBilled(months, s.year, estimated)
 	var parts, below []string
 	for _, b := range billed {
@@ -415,6 +471,7 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 		}
 	}
 	row("- billed month by month", "-"+pln(h.healthMonthly), strings.Join(parts, ", "), false)
+
 	switch {
 	case h.months == 0:
 		row("= difference", pln(0), "no insured month in the year: no settlement", true)
@@ -427,6 +484,7 @@ func printYear(w *report, c config, s yearSheet, months []month, pays []payment,
 	default:
 		row("= difference", pln(0), "", true)
 	}
+
 	if estimated {
 		rest := monthRanges(slices.DeleteFunc(slices.Clone(all), func(m time.Time) bool { return slices.Contains(invoiced, m) }), s.year)
 		w.println("\n" + paint(w, dim, fmt.Sprintf("* %s assumed like %s; final once the year is invoiced", rest, like)))
@@ -451,6 +509,7 @@ func healthBilled(months []month, year int, toDecember bool) []billedRun {
 			out = append(out, billedRun{monthRanges(run, year), len(run), cur})
 		}
 	}
+
 	add := func(m time.Time, g int64) {
 		if g != cur {
 			flush()
@@ -458,6 +517,7 @@ func healthBilled(months []month, year int, toDecember bool) []billedRun {
 		}
 		run = append(run, m)
 	}
+
 	last := time.Time{}
 	for _, m := range months {
 		if m.start.Year() == year {
@@ -465,11 +525,13 @@ func healthBilled(months []month, year int, toDecember bool) []billedRun {
 			last = m.start
 		}
 	}
+
 	if toDecember && !last.IsZero() {
 		for m := last.AddDate(0, 1, 0); m.Year() == year; m = m.AddDate(0, 1, 0) {
 			add(m, cur)
 		}
 	}
+
 	flush()
 	return out
 }
@@ -481,16 +543,19 @@ func healthCliff(c config, months []month, pays []payment, year int, today time.
 	if year != today.Year() {
 		return finding{}, false
 	}
+
 	ext, extPays, ok := fullYear(c, months, pays, year)
 	if !ok {
 		return finding{}, false
 	}
+
 	var monthRevenue int64
 	for _, m := range months {
 		if m.start.Year() == year && m.invoiced {
 			monthRevenue = m.revenue.grosze
 		}
 	}
+
 	base := settleYear(c, ext, extPays, year, time.Date(year, 12, 31, 0, 0, 0, 0, time.UTC)).healthBase
 	pln := func(g int64) string { return strings.TrimSuffix(plnText(amount{wholePLN(g), official}), ".00") }
 	for i, line := range healthThresholds {
@@ -504,5 +569,6 @@ func healthCliff(c config, months []month, pays []payment, year int, today time.
 				"the whole year falls in the higher band", pln(base), pln(d), name)}, true
 		}
 	}
+
 	return finding{}, false
 }

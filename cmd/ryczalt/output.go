@@ -39,10 +39,12 @@ func isTerminal(w io.Writer) bool {
 	if r, ok := w.(*report); ok {
 		w = r.out
 	}
+
 	f, ok := w.(*os.File)
 	if !ok {
 		return false
 	}
+
 	st, err := f.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
@@ -79,6 +81,7 @@ func printTable(w *report, rows [][]string, right []bool, colour func(row, col i
 			widths[i] = max(widths[i], utf8.RuneCountInString(cell))
 		}
 	}
+
 	for r, row := range rows {
 		cells := make([]string, len(row))
 		for i, cell := range row {
@@ -88,11 +91,14 @@ func printTable(w *report, rows [][]string, right []bool, colour func(row, col i
 			} else if i < len(row)-1 {
 				cell += pad
 			}
+
 			if c := colour(r, i); c != "" {
 				cell = paint(w, c, cell)
 			}
+
 			cells[i] = cell
 		}
+
 		w.println(strings.TrimRight(strings.Join(cells, "  "), " "))
 	}
 }
@@ -102,6 +108,7 @@ func printTable(w *report, rows [][]string, right []bool, colour func(row, col i
 func parseFlags(flags *flag.FlagSet, args []string) error {
 	// flag errors are printed once, by main; help goes to stderr
 	flags.SetOutput(io.Discard)
+
 	var positional []string
 	for {
 		if err := flags.Parse(args); err != nil {
@@ -111,6 +118,7 @@ func parseFlags(flags *flag.FlagSet, args []string) error {
 			}
 			return err
 		}
+
 		args = flags.Args()
 		if len(args) == 0 {
 			break
@@ -119,7 +127,9 @@ func parseFlags(flags *flag.FlagSet, args []string) error {
 			positional = append(positional, args[1:]...)
 			break
 		}
+
 		positional, args = append(positional, args[0]), args[1:]
 	}
+
 	return flags.Parse(append([]string{"--"}, positional...))
 }

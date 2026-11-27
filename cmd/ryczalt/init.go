@@ -64,7 +64,7 @@ chorobowa=
 
 [client]   # kontrahent
 # Days the client has to pay, counted from the day after the invoice is
-# submitted. A deadline on a weekend or holiday moves to the next working
+# issued. A deadline on a weekend or holiday moves to the next working
 # day (KC art. 115, BGB § 193).
 payment_days=7
 
@@ -106,6 +106,7 @@ func nipFromKsef(path string) string {
 	if err != nil {
 		return ""
 	}
+
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
 		k, v, ok := strings.Cut(strings.TrimSpace(sc.Text()), "=")
@@ -113,6 +114,7 @@ func nipFromKsef(path string) string {
 			return parseValue(v)
 		}
 	}
+
 	return ""
 }
 
@@ -121,9 +123,11 @@ func nipFromKsef(path string) string {
 func cmdInit(args []string) error {
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	cfgFlag := flags.String("c", "", "where to write the config")
+
 	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
+
 	archive := "~/invoices"
 	switch flags.NArg() {
 	case 0:
@@ -132,6 +136,7 @@ func cmdInit(args []string) error {
 	default:
 		return exitError{2, errors.New("usage: ryczalt init [-c CONFIG] [ARCHIVE]")}
 	}
+
 	if !filepath.IsAbs(expandHome(archive)) {
 		return exitError{
 			2,
@@ -145,6 +150,7 @@ func cmdInit(args []string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("%s already exists, leaving it alone", path)
@@ -152,31 +158,38 @@ func cmdInit(args []string) error {
 	if err != nil {
 		return err
 	}
+
 	if strings.ContainsAny(archive, " \t#\"'") {
 		archive = "'" + archive + "'" // the value is read the way the shell would
 	}
+
 	if _, err := fmt.Fprintf(f, confTemplate, archive, nip); err != nil {
 		_ = f.Close() // the write error is the one to report
 		return err
 	}
+
 	if err := f.Close(); err != nil {
 		return err
 	}
 
 	out := newReport(os.Stdout)
 	out.printf("%s wrote %s\n", tag(out, green, "OK"), path)
+
 	todo := []string{
 		"tax.business_start", "tax.revenue_basis", "zus.chorobowa", "client.calendar",
 		"zus.ulga_until and zus.preferential_until, if you had them",
 	}
+
 	if nip != "" {
 		out.printf("%s nip taken from ksef-cli's %s\n", tag(out, cyan, "INFO"), ksef)
 	} else {
 		todo = append([]string{"tax.nip"}, todo...)
 	}
+
 	out.println("  fill in, then run ryczalt status:")
 	for _, t := range todo {
 		out.println("  -", t)
 	}
+
 	return out.flush()
 }

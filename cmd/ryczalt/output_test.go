@@ -14,6 +14,7 @@ func TestTagWidth(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = f.Close() })
+
 	for word, want := range map[string]string{"OK": "[  OK  ]", "WARN": "[ WARN ]", "FAIL": "[ FAIL ]", "SKIPPED": "[SKIPPED]"} {
 		if got := tag(f, yellow, word); got != want {
 			t.Errorf("tag(%q) = %q, want %q", word, got, want)
@@ -28,9 +29,11 @@ func TestParseFlags(t *testing.T) {
 	if err := parseFlags(flags, []string{"2026-10", "--on", "2026-11-18", "zus", "--on-due"}); err != nil {
 		t.Fatal(err)
 	}
+
 	if *on != "2026-11-18" || !*due || strings.Join(flags.Args(), " ") != "2026-10 zus" {
 		t.Errorf("on=%q due=%v args=%q", *on, *due, flags.Args())
 	}
+
 	flags = flag.NewFlagSet("x", flag.ContinueOnError)
 	flags.Bool("v", false, "")
 	if err := parseFlags(flags, []string{"a", "--", "-v"}); err != nil || strings.Join(flags.Args(), " ") != "a -v" {

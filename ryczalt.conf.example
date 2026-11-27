@@ -48,7 +48,7 @@ chorobowa=
 
 [client]   # kontrahent
 # Days the client has to pay, counted from the day after the invoice is
-# submitted. A deadline on a weekend or holiday moves to the next working
+# issued. A deadline on a weekend or holiday moves to the next working
 # day (KC art. 115, BGB § 193).
 payment_days=7
 

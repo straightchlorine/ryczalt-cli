@@ -31,11 +31,13 @@ func latestInvoify(root, folder string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	slices.Reverse(dirs)
 	for _, d := range dirs {
 		if !folderName.MatchString(d.Name()) || d.Name() >= folder {
 			continue
 		}
+
 		p := filepath.Join(root, d.Name(), "invoice.json")
 		if b, err := os.ReadFile(p); err == nil {
 			if _, err := readInvoify(b); err == nil {
@@ -43,6 +45,7 @@ func latestInvoify(root, folder string) (string, error) {
 			}
 		}
 	}
+
 	return "", fmt.Errorf("no invoice.json before %s in %s to start from", folder, root)
 }
 
@@ -55,10 +58,12 @@ func nextInvoify(tmpl []byte, number string, issued, due, serviceFrom, serviceTo
 	if err := dec.Decode(&doc); err != nil {
 		return nil, nil, err
 	}
+
 	d, ok := doc["details"].(map[string]any)
 	if !ok {
 		return nil, nil, errors.New("template has no details")
 	}
+
 	var notes []string
 	d["invoiceNumber"] = number
 	d["invoiceDate"] = issued.Format(invoifyDate)
@@ -66,6 +71,7 @@ func nextInvoify(tmpl []byte, number string, issued, due, serviceFrom, serviceTo
 
 	published, _ := time.Parse(time.DateOnly, rate.Date)
 	rateText := fmt.Sprintf("exchange rate on %s: %d.%02d PLN", published.Format("02.01.2006"), pln/100, pln%100)
+
 	items, _ := d["items"].([]any)
 	first, _ := func() (map[string]any, bool) {
 		if len(items) == 0 {
@@ -74,11 +80,13 @@ func nextInvoify(tmpl []byte, number string, issued, due, serviceFrom, serviceTo
 		m, ok := items[0].(map[string]any)
 		return m, ok
 	}()
+
 	if desc, _ := first["description"].(string); rateSentence.MatchString(desc) {
 		first["description"] = rateSentence.ReplaceAllString(desc, rateText)
 	} else {
 		notes = append(notes, "the first item's description has no exchange rate sentence; add the PLN amount by hand")
 	}
+
 	periodText := "from " + serviceFrom.Format("02 January 2006") + " to " + serviceTo.Format("02 January 2006")
 	if terms, _ := d["paymentTerms"].(string); periodSentence.MatchString(terms) {
 		d["paymentTerms"] = periodSentence.ReplaceAllString(terms, periodText)
@@ -95,13 +103,16 @@ func cmdNew(args []string) error {
 	cfgFlag := flags.String("c", "", "config file")
 	dateFlag := flags.String("date", "", "issue `DATE` (default the 1st of the next month, or today if later)")
 	numberFlag := flags.String("number", "", "invoice `NUMBER` (default the previous one, renumbered)")
+
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: ryczalt new [-c CONFIG] [--date DATE] [--number NUMBER] [MONTH]\n"+
-			"MONTH is the month of work (default last month); the invoice goes to the next month's folder.")
+			"MONTH is the month of work (default last month); the invoice goes to the folder of the issue month.")
 	}
+
 	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
+
 	today := todayWarsaw()
 	service := time.Date(today.Year(), today.Month()-1, 1, 0, 0, 0, 0, time.UTC)
 	switch flags.NArg() {
@@ -116,11 +127,13 @@ func cmdNew(args []string) error {
 		flags.Usage()
 		return exitError{2, errors.New("too many arguments")}
 	}
+
 	serviceTo := service.AddDate(0, 1, -1)
 	issued := service.AddDate(0, 1, 0)
 	if today.After(issued) {
 		issued = today
 	}
+
 	if *dateFlag != "" {
 		t, err := time.Parse(time.DateOnly, *dateFlag)
 		if err != nil {
@@ -128,23 +141,28 @@ func cmdNew(args []string) error {
 		}
 		issued = t
 	}
+
 	if issued.Before(serviceTo) {
 		return fmt.Errorf("issue date %s is before the work ends on %s", issued.Format(time.DateOnly), serviceTo.Format(time.DateOnly))
 	}
+
 	folder := issued.Format("2006-01")
 
 	c, err := loadConfig(*cfgFlag)
 	if err != nil {
 		return err
 	}
+
 	tmplPath, err := latestInvoify(c.archive, folder)
 	if err != nil {
 		return err
 	}
+
 	tmpl, err := os.ReadFile(tmplPath)
 	if err != nil {
 		return err
 	}
+
 	prev, _ := readInvoify(tmpl)
 
 	number := *numberFlag
@@ -155,21 +173,25 @@ func cmdNew(args []string) error {
 		}
 		number = strings.Replace(prev.number, prevFolder, folder, 1)
 	}
+
 	if invs, _, err := readArchive(c.archive, c.nip); err == nil {
 		if i := slices.IndexFunc(invs, func(v invoice) bool { return v.number == number }); i >= 0 {
 			return fmt.Errorf("invoice %s already exists (%s); give another --number", number, invs[i].source)
 		}
 	}
+
 	due := shiftDeadline(c.clientCalendar, issued.AddDate(0, 0, c.paymentDays))
 
 	inv := invoice{number: number, issued: issued, serviceEnd: serviceTo, currency: prev.currency, total: prev.total}
 	if inv.currency == "PLN" {
 		return errors.New("new handles foreign-currency invoices only so far")
 	}
+
 	revenue, rate, err := revenuePLN(inv, c.revenueBasis, cacheDir())
 	if err != nil {
 		return err
 	}
+
 	out, notes, err := nextInvoify(tmpl, number, issued, due, service, serviceTo, rate, revenue)
 	if err != nil {
 		return fmt.Errorf("%s: %w", tmplPath, err)
@@ -179,6 +201,7 @@ func cmdNew(args []string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("%s already exists, leaving it alone", path)
@@ -186,6 +209,7 @@ func cmdNew(args []string) error {
 	if err != nil {
 		return err
 	}
+
 	if _, err := f.Write(out); err != nil {
 		_ = f.Close() // the write error is the one to report
 		return err
@@ -197,6 +221,7 @@ func cmdNew(args []string) error {
 	w := newReport(os.Stdout)
 	day := func(t time.Time) string { return t.Weekday().String()[:3] + " " + t.Format(time.DateOnly) }
 	label := func(s string) string { return paint(w, dim, fmt.Sprintf("         %-9s", s)) }
+
 	w.printf("%s wrote %s\n", tag(w, green, "OK"), path)
 	w.printf("%s %s, issued %s, due %s\n", label("invoice"), paint(w, bold, number), day(issued), day(due))
 	w.printf("%s %s to %s\n", label("work"), service.Format(time.DateOnly), serviceTo.Format(time.DateOnly))
@@ -217,10 +242,12 @@ func cmdNew(args []string) error {
 				strings.TrimSuffix(plnText(m.ryczalt), ".00"), plnText(zus), paint(w, bold, plnText(total)))
 		}
 	}
+
 	w.printf("%s copied from %s; review the notes in Invoify before exporting\n",
 		tag(w, cyan, "INFO"), filepath.Join(filepath.Base(filepath.Dir(tmplPath)), "invoice.json"))
 	for _, n := range notes {
 		w.println(tag(w, yellow, "WARN"), n)
 	}
+
 	return w.flush()
 }

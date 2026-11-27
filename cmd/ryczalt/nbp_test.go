@@ -20,6 +20,7 @@ func fakeNBP(t *testing.T, calls *[]string) {
 			{"no":"211/A/NBP/2026","effectiveDate":"2026-10-29","mid":4.2512},
 			{"no":"212/A/NBP/2026","effectiveDate":"2026-10-30","mid":4.3955}]}`))
 	}))
+
 	old := nbpURL
 	nbpURL = srv.URL
 	t.Cleanup(func() { nbpURL = old; srv.Close() })
@@ -29,6 +30,7 @@ func TestRevenuePLN(t *testing.T) {
 	var calls []string
 	fakeNBP(t, &calls)
 	cache := t.TempDir()
+
 	inv := invoice{
 		number:     "INV-11",
 		issued:     time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
@@ -36,16 +38,19 @@ func TestRevenuePLN(t *testing.T) {
 		currency:   "EUR",
 		total:      big.NewRat(3333, 1),
 	}
+
 	for range 2 {
 		g, r, err := revenuePLN(inv, "period_end", cache)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		// 3333 x 4.3955 = 14 650.2015
 		if g != 1465020 || r.Table != "212/A/NBP/2026" || r.Date != "2026-10-30" {
 			t.Errorf("got %d grosze, %+v", g, r)
 		}
 	}
+
 	// the day before the revenue date ends the range; the second call is cached
 	if len(calls) != 1 || calls[0] != "/eur/2026-10-20/2026-10-30/" {
 		t.Errorf("NBP calls: %q", calls)
@@ -79,6 +84,7 @@ func TestRevenueDate(t *testing.T) {
 		{"service", early, "2026-10-28"}, // invoiced before the work ended
 		{"service", late, "2026-10-31"},
 	}
+
 	for _, c := range cases {
 		if got := revenueDate(c.basis, c.inv).Format(time.DateOnly); got != c.want {
 			t.Errorf("%s, issued %s: got %s, want %s", c.basis, c.inv.issued.Format(time.DateOnly), got, c.want)
@@ -90,25 +96,30 @@ func TestPitRateRejectsBadData(t *testing.T) {
 	var calls []string
 	fakeNBP(t, &calls)
 	cache := t.TempDir()
+
 	revenue := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
 	path := filepath.Join(cache, "nbp", "eur-2026-10-30.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
+
 	// damaged, zero and too-late cache entries are fetched again, not used
 	for _, bad := range []string{`{"Mid":"abc","Table":"x","Date":"2026-10-30"}`, `{"Mid":"0","Table":"x","Date":"2026-10-30"}`,
 		`{"Mid":"4.1","Table":"x","Date":"2026-10-31"}`, `{"Mid":"4,39"`} {
 		if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
 			t.Fatal(err)
 		}
+
 		r, err := pitRate("EUR", revenue, cache)
 		if err != nil || r.Mid != "4.3955" {
 			t.Errorf("cache %s: got %+v, %v", bad, r, err)
 		}
 	}
+
 	if len(calls) != 4 {
 		t.Errorf("want a fetch per damaged entry, got %d", len(calls))
 	}
+
 	if _, err := pitRate("../x", revenue, cache); err == nil {
 		t.Error("want an error for a currency that is not a code")
 	}
@@ -121,6 +132,7 @@ func TestPitRatePublication(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"rates":[{"no":"190/A/NBP/2026","effectiveDate":"` + published + `","mid":4.27}]}`))
 	}))
+
 	old, oldClock := nbpURL, clock
 	nbpURL = srv.URL
 	t.Cleanup(func() { nbpURL, clock = old, oldClock; srv.Close() })
@@ -133,6 +145,7 @@ func TestPitRatePublication(t *testing.T) {
 	if _, err := pitRate("EUR", revenue, t.TempDir()); err == nil || !strings.Contains(err.Error(), "table of Fri 2026-10-02") {
 		t.Errorf("Friday morning: %v", err)
 	}
+
 	// after noon, but NBP still answers with Thursday's table: not cached
 	cache := t.TempDir()
 	at("2026-10-02 12:30")
@@ -140,11 +153,13 @@ func TestPitRatePublication(t *testing.T) {
 	if _, err := pitRate("EUR", revenue, cache); err == nil {
 		t.Error("an older table while Friday's is due must not be used")
 	}
+
 	published = "2026-10-02"
 	at("2026-10-03 09:00") // Saturday: Friday's table is out
 	if r, err := pitRate("EUR", revenue, cache); err != nil || r.Date != "2026-10-02" {
 		t.Errorf("Saturday: %+v %v", r, err)
 	}
+
 	// a long-past day NBP skipped: the table before it is the right one
 	at("2026-11-25 09:00")
 	published = "2026-10-01"

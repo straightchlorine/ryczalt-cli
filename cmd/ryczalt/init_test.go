@@ -14,6 +14,7 @@ func TestConfigExampleIsTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if want := fmt.Sprintf(confTemplate, "~/invoices", "1234563218"); string(b) != want {
 		t.Errorf("ryczalt.conf.example differs from confTemplate; regenerate it")
 	}
@@ -24,6 +25,7 @@ func TestInit(t *testing.T) {
 	ksef := filepath.Join(dir, "ksef.conf")
 	mustWrite(t, ksef, []byte("env=prod\nnip = \"5260250274\"  # mine\nksef_token=\n"))
 	t.Setenv("KSEF_CONFIG", ksef)
+
 	stdout := os.Stdout
 	os.Stdout, _ = os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	t.Cleanup(func() { _ = os.Stdout.Close(); os.Stdout = stdout })
@@ -32,16 +34,19 @@ func TestInit(t *testing.T) {
 	if err := cmdInit([]string{"-c", path, "/srv/invoices"}); err != nil {
 		t.Fatal(err)
 	}
+
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !strings.Contains(string(b), "archive=/srv/invoices\n") || !strings.Contains(string(b), "nip=5260250274\n") {
 		t.Errorf("config:\n%s", b)
 	}
 	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v, want 0600", st.Mode().Perm())
 	}
+
 	// what is left blank is exactly what the user has to fill in
 	_, err = parseConfig(strings.NewReader(string(b)))
 	want := "tax.business_start: required\ntax.revenue_basis: required\nzus.chorobowa: required\nclient.calendar: required"
@@ -74,6 +79,7 @@ func TestInitQuotesArchive(t *testing.T) {
 	if _, err := run(t, cmdInit, "-c", path, "/path with spaces/in # it"); err != nil {
 		t.Fatal(err)
 	}
+
 	b, _ := os.ReadFile(path)
 	_, err := parseConfig(strings.NewReader(string(b)))
 	if c, _ := parseConfig(strings.NewReader(string(b))); c.archive != "/path with spaces/in # it" {

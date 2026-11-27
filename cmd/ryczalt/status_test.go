@@ -21,6 +21,7 @@ func fakeNBPFlat(t *testing.T) {
 			{"no": "001/A/NBP/2026", "effectiveDate": parts[2], "mid": 4.0},
 		}})
 	}))
+
 	old := nbpURL
 	nbpURL = srv.URL
 	t.Cleanup(func() { nbpURL = old; srv.Close() })
@@ -39,45 +40,54 @@ func TestStatus(t *testing.T) {
 		end := day(t, start).AddDate(0, 0, -1).Format(time.DateOnly)
 		files["2026-"+m+"/ksef-INV-"+m+".xml"] = fa("INV-"+m, start, end)
 	}
+
 	c := config{
 		archive: writeArchive(t, files), nip: testNIP, rate: "12", revenueBasis: "period_end",
 		businessStart: day(t, "2026-01-01"), preferentialUntil: day(t, "2027-12-01"), chorobowa: true,
 	}
 	today := day(t, "2026-07-20")
+
 	invs, found, err := readArchive(c.archive, c.nip)
 	if err != nil || len(found) > 0 {
 		t.Fatal(err, found)
 	}
+
 	// January to April paid on their deadlines, May's ryczalt late, June's
 	// ZUS early (June has no invoice yet), nothing for July
 	var pays []payment
 	pay := func(on, period, kind string, g int64) {
 		pays = append(pays, payment{id: on + kind, paidOn: day(t, on), period: day(t, period+"-01"), kind: kind, grosze: g})
 	}
+
 	for i, due := range []string{"2026-02-20", "2026-03-20", "2026-04-20", "2026-05-20"} {
 		period := fmt.Sprintf("2026-%02d", i+1)
 		pay(due, period, "social", 45618)
 		pay(due, period, "health", 49835)
 		pay(due, period, "ryczalt", 160000)
 	}
+
 	pay("2026-06-22", "2026-05", "social", 45618)
 	pay("2026-06-22", "2026-05", "health", 83058)
 	pay("2026-06-25", "2026-05", "ryczalt", 160000)
 	pay("2026-07-10", "2026-06", "social", 45618)
 	pay("2026-07-10", "2026-06", "health", 83058)
+
 	months, notes := buildYear(c, invs, pays, 2026, today, t.TempDir())
 	if len(notes) > 0 {
 		t.Fatal(notes)
 	}
+
 	out, err := os.CreateTemp(t.TempDir(), "status")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	r := newReport(out)
 	failed := printStatus(r, c, 2026, today, months, nil)
 	if err := r.flush(); err != nil {
 		t.Fatal(err)
 	}
+
 	b, _ := os.ReadFile(out.Name())
 
 	want := `ryczalt 2026
@@ -118,11 +128,13 @@ func TestMonthState(t *testing.T) {
 		{"2026-11-20", "due today", "WARN"},
 		{"2026-11-21", "zus, ryczalt", "FAIL"},
 	}
+
 	for _, c := range cases {
 		if text, level := monthState(m, day(t, c.today)); text != c.text || level != c.level {
 			t.Errorf("%s: got %q %q, want %q %q", c.today, text, level, c.text, c.level)
 		}
 	}
+
 	m.invoiced = false
 	if text, level := monthState(m, day(t, "2026-11-15")); level != "INFO" || !strings.Contains(text, "2026-11-16") {
 		t.Errorf("15 Nov 2026 is a Sunday, so the invoice is due on Monday the 16th: got %q %q", text, level)
@@ -136,6 +148,7 @@ func TestZusPhase(t *testing.T) {
 			t.Errorf("%s: got %s, want %s", m, got, want)
 		}
 	}
+
 	if got := zusPhase(config{}, day(t, "2026-01-01")); got != "full" {
 		t.Errorf("no relief configured: got %s", got)
 	}
@@ -146,5 +159,22 @@ func TestWholePLN(t *testing.T) {
 		if got := wholePLN(g); got != want {
 			t.Errorf("wholePLN(%d) = %d, want %d", g, got, want)
 		}
+	}
+}
+
+// Suspended months have nothing due, so the hint to record payments starts
+// at March, the first month with something to pay.
+func TestStatusHintSkipsSuspended(t *testing.T) {
+	c := config{rate: "12", revenueBasis: "period_end", businessStart: day(t, "2026-01-01"),
+		preferentialUntil: day(t, "2027-12-01"), chorobowa: true,
+		suspendedFrom: day(t, "2026-01-01"), suspendedUntil: day(t, "2026-02-01")}
+
+	today := day(t, "2026-06-10")
+	months, _ := buildYear(c, nil, nil, 2026, today, t.TempDir())
+
+	r := newReport(nil)
+	printStatus(r, c, 2026, today, months, nil)
+	if want := "ryczalt paid --on-due 2026-03..2026-04\n"; !strings.Contains(r.b.String(), want) {
+		t.Errorf("want %q in:\n%s", want, r.b.String())
 	}
 }

@@ -29,15 +29,18 @@ func syncArgs(c config, del, dry bool) []string {
 	if c.r2Endpoint != "" {
 		a = append(a, "--endpoint-url", c.r2Endpoint)
 	}
+
 	for _, x := range syncExcludes {
 		a = append(a, "--exclude", x)
 	}
+
 	if del {
 		a = append(a, "--delete")
 	}
 	if dry {
 		a = append(a, "--dryrun")
 	}
+
 	return a
 }
 
@@ -49,6 +52,7 @@ func pushToR2(c config, del, dry bool) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("aws s3 sync: %w", err)
 	}
+
 	return nil
 }
 
@@ -57,12 +61,14 @@ func cmdSync(args []string) error {
 	cfgFlag := flags.String("c", "", "config file")
 	del := flags.Bool("delete", false, "also delete from R2 what is gone from the archive")
 	dry := flags.Bool("dry-run", false, "show what would be copied")
+
 	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
 	if flags.NArg() > 0 {
 		return exitError{2, errors.New("usage: ryczalt sync [-c CONFIG] [--delete] [--dry-run]")}
 	}
+
 	c, err := loadConfig(*cfgFlag)
 	if err != nil {
 		return err
@@ -70,6 +76,7 @@ func cmdSync(args []string) error {
 	if c.r2Bucket == "" {
 		return exitError{2, errors.New("no [r2] bucket in the config; sync has nowhere to go")}
 	}
+
 	return pushToR2(c, *del, *dry)
 }
 
@@ -82,12 +89,14 @@ func ksefEnv(c config) string {
 	if err != nil {
 		return "test" // ksef-cli's default
 	}
+
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
 		if k, v, ok := strings.Cut(strings.TrimSpace(sc.Text()), "="); ok && strings.TrimSpace(k) == "env" {
 			return cmp.Or(parseValue(v), "test")
 		}
 	}
+
 	return "test"
 }
 
@@ -101,6 +110,7 @@ func cmdSend(args []string) error {
 		fmt.Fprintln(os.Stderr, "usage: ryczalt send [-c CONFIG] [MONTH]\n"+
 			"MONTH is the month of work; by default the one invoice not yet in KSeF.")
 	}
+
 	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
@@ -108,10 +118,12 @@ func cmdSend(args []string) error {
 		flags.Usage()
 		return exitError{2, errors.New("too many arguments")}
 	}
+
 	c, err := loadConfig(*cfgFlag)
 	if err != nil {
 		return err
 	}
+
 	invs, _, err := readArchive(c.archive, c.nip)
 	if err != nil {
 		return err
@@ -125,15 +137,18 @@ func cmdSend(args []string) error {
 			todo = append(todo, inv)
 		}
 	}
+
 	if flags.NArg() == 1 {
 		month, err := time.Parse("2006-01", flags.Arg(0))
 		if err != nil {
 			return exitError{2, fmt.Errorf("month %q is not like 2026-11", flags.Arg(0))}
 		}
+
 		todo = slices.DeleteFunc(todo, func(inv invoice) bool {
 			return inv.serviceEnd.Year() != month.Year() || inv.serviceEnd.Month() != month.Month()
 		})
 	}
+
 	switch {
 	case len(todo) == 0:
 		return errors.New("no invoice waiting to be sent (every invoice.json has a KSeF number)")
@@ -145,6 +160,7 @@ func cmdSend(args []string) error {
 		return exitError{2, fmt.Errorf("several invoices wait to be sent: %s; name the month of work",
 			strings.Join(names, ", "))}
 	}
+
 	inv := todo[0]
 	src := filepath.Join(c.archive, inv.source)
 	out := filepath.Join(filepath.Dir(src), "ksef-"+unsafeName.ReplaceAllString(inv.number, "-")+".xml")
@@ -159,6 +175,7 @@ func cmdSend(args []string) error {
 		w.printf("%s ksef-cli is set to env=%s: this goes to the KSeF %s environment, not to the real one\n",
 			tag(w, yellow, "WARN"), env, env)
 	}
+
 	if !inv.issued.Equal(today) {
 		w.printf("%s issued %s, sent today: KSeF will record it as Offline", tag(w, yellow, "WARN"),
 			inv.issued.Format(time.DateOnly))
@@ -167,6 +184,7 @@ func cmdSend(args []string) error {
 		}
 		w.println()
 	}
+
 	if err := w.flush(); err != nil {
 		return err
 	}
@@ -177,6 +195,7 @@ func cmdSend(args []string) error {
 	if c.ksefConfig != "" {
 		cmd.Env = append(os.Environ(), "KSEF_CONFIG="+c.ksefConfig)
 	}
+
 	if err := cmd.Run(); err != nil {
 		var notFound *exec.Error
 		if errors.As(err, &notFound) || errors.Is(err, fs.ErrNotExist) {
@@ -184,11 +203,14 @@ func cmdSend(args []string) error {
 		}
 		return fmt.Errorf("ksef: %w", err)
 	}
+
 	if _, err := os.Stat(upo); err != nil {
 		return nil // not sent (declined at the prompt, or still pending): nothing to back up
 	}
+
 	if c.r2Bucket != "" {
 		return pushToR2(c, false, false)
 	}
+
 	return nil
 }

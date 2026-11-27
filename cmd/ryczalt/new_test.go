@@ -24,6 +24,7 @@ func TestNew(t *testing.T) {
 	cfg := filepath.Join(t.TempDir(), "ryczalt.conf")
 	mustWrite(t, cfg, []byte(strings.Replace(validConfig, "/srv/invoices", root, 1)))
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	stdout := os.Stdout
 	os.Stdout, _ = os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	t.Cleanup(func() { _ = os.Stdout.Close(); os.Stdout = stdout })
@@ -32,10 +33,12 @@ func TestNew(t *testing.T) {
 	if err := cmdNew([]string{"-c", cfg, "2026-10", "--date", "2026-11-02"}); err != nil {
 		t.Fatal(err)
 	}
+
 	b, err := os.ReadFile(filepath.Join(root, "2026-11", "invoice.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var got struct {
 		Sender  map[string]any
 		Details map[string]any
@@ -43,6 +46,7 @@ func TestNew(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatal(err)
 	}
+
 	d := got.Details
 	item := d["items"].([]any)[0].(map[string]any)
 	checks := map[string]any{
@@ -57,6 +61,7 @@ func TestNew(t *testing.T) {
 		"sender":   got.Sender["name"] == "Seller",
 		"rate day": len(calls) > 0 && calls[0] == "/eur/2026-10-20/2026-10-30/", // last business day before 31 Oct
 	}
+
 	for name, ok := range checks {
 		if ok != true {
 			t.Errorf("%s wrong:\n%s", name, b)
@@ -66,17 +71,21 @@ func TestNew(t *testing.T) {
 	if err := cmdNew([]string{"-c", cfg, "--date", "2026-11-02", "2026-10"}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("second run: %v", err)
 	}
+
 	// issued Sun 1 Nov: the 7th day is Sun 8 Nov, so the deadline is Mon 9 Nov
 	if err := os.Remove(filepath.Join(root, "2026-11", "invoice.json")); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := cmdNew([]string{"-c", cfg, "--date", "2026-11-01", "2026-10"}); err != nil {
 		t.Fatal(err)
 	}
+
 	b, _ = os.ReadFile(filepath.Join(root, "2026-11", "invoice.json"))
 	if !strings.Contains(string(b), `"dueDate":"2026-11-09T00:00:00.000Z"`) {
 		t.Errorf("due date not moved past Sunday:\n%s", b)
 	}
+
 	if err := cmdNew([]string{"-c", cfg, "--date", "2026-10-15", "2026-10"}); err == nil || !strings.Contains(err.Error(), "before the work ends") {
 		t.Errorf("issued mid-month: %v", err)
 	}
@@ -101,14 +110,17 @@ func TestNextInvoifyWithoutSentences(t *testing.T) {
 func TestNewRefusesIssuedNumber(t *testing.T) {
 	var calls []string
 	fakeNBP(t, &calls)
+
 	// October's invoice already sent as XML, its invoice.json moved away
 	root := writeArchive(t, map[string]string{
 		"2026-09/invoice.json":             strings.NewReplacer("DEV-2026-10-001", "DEV-2026-09-001", "2026-10-01T", "2026-09-01T").Replace(invoifyTemplate),
 		"2026-10/ksef-DEV-2026-10-001.xml": fa("DEV-2026-10-001", "2026-10-01", "2026-09-30"),
 	})
+
 	cfg := filepath.Join(t.TempDir(), "ryczalt.conf")
 	mustWrite(t, cfg, []byte(strings.Replace(validConfig, "/srv/invoices", root, 1)))
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	if _, err := run(t, cmdNew, "-c", cfg, "2026-09", "--date", "2026-10-01"); err == nil || !strings.Contains(err.Error(), "DEV-2026-10-001 already exists") {
 		t.Errorf("got %v", err)
 	}

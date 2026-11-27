@@ -20,9 +20,9 @@ const usage = `Usage: ryczalt init [-c CONFIG] [ARCHIVE]
        ryczalt paid [-c CONFIG] [--on DATE | --on-due] PERIOD [KIND [AMOUNT]]
        ryczalt paid [-c CONFIG] --list [YEAR]
        ryczalt void [-c CONFIG] ID...
-       ryczalt year [-c CONFIG] [YEAR]
+       ryczalt year [-c CONFIG] [--today DATE] [YEAR]
        ryczalt ewid [-c CONFIG] [--csv | --jpk [--correction]] [YEAR]
-       ryczalt forms [-c CONFIG] [YEAR]
+       ryczalt forms [-c CONFIG] [--today DATE] [YEAR]
        ryczalt check [-c CONFIG]
        ryczalt rules [YEAR]
        ryczalt version
@@ -35,9 +35,9 @@ Subcommands:
               invoice folders (default ~/invoices). The NIP is taken from
               ksef-cli's ksef.conf when there is one.
   new         Prepare the invoice for a month of work (default last month)
-              as an Invoify invoice.json in the next month's folder, copied
-              from the previous one: number, dates, work period, the NBP rate
-              the PIT act asks for and the PLN amount filled in. Import it
+              as an Invoify invoice.json in the folder of the issue month,
+              copied from the previous one: number, dates, work period, the NBP
+              rate the PIT act asks for and the PLN amount filled in. Import it
               into Invoify, check it, export the PDF. Shows what the month
               will cost.
   add         Put documents (the invoice PDF from Invoify, a contract, a
@@ -51,7 +51,8 @@ Subcommands:
   status      Month by month for the year: revenue from the invoices in the
               archive (in PLN at the NBP rate the PIT act requires), ryczalt,
               social and health contributions, the payment deadline and what
-              still needs doing. Exits 1 when something is overdue.
+              still needs doing. Exits 1 when something is overdue or an
+              invoice is missing after its deadline.
   paid        Record a payment for a month (2026-10) or a range of months
               (2026-01..2026-10): KIND is zus, social, health, fpfs or
               ryczalt, by default zus and ryczalt at the amounts due. Paid
@@ -120,6 +121,7 @@ func main() {
 			paint(os.Stderr, red, "Error:"), cmd)
 		os.Exit(2)
 	}
+
 	var exit exitError
 	switch {
 	case err == nil, errors.Is(err, flag.ErrHelp):

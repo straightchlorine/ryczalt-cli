@@ -15,13 +15,16 @@ func run(t *testing.T, cmd func([]string) error, args ...string) (string, error)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	stdout, stderr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = f, f
 	err = cmd(args)
 	os.Stdout, os.Stderr = stdout, stderr
+
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
+
 	b, _ := os.ReadFile(f.Name())
 	return string(b), err
 }
@@ -30,12 +33,14 @@ func run(t *testing.T, cmd func([]string) error, args ...string) (string, error)
 func TestCommands(t *testing.T) {
 	fakeNBPFlat(t)
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	files := map[string]string{}
 	for _, m := range []string{"02", "03", "04"} {
 		start := "2026-" + m + "-01"
 		files["2026-"+m+"/ksef-INV-"+m+".xml"] = fa("INV-"+m, start, day(t, start).AddDate(0, 0, -1).Format("2006-01-02"))
 		files["2026-"+m+"/ksef-INV-"+m+".upo.xml"] = upo([2]string{"INV-" + m, "K-" + m})
 	}
+
 	root := writeArchive(t, files)
 	conf := strings.NewReplacer("/srv/invoices", root, "business_start=2025-06", "business_start=2026-01",
 		"ulga_until=2025-12", "ulga_until=").Replace(validConfig)
@@ -47,12 +52,14 @@ func TestCommands(t *testing.T) {
 	if err != nil || strings.Count(out, "[  OK  ]") != 6 {
 		t.Fatalf("paid range: %v\n%s", err, out)
 	}
+
 	if _, err := run(t, cmdPaid, "-c", cfg, "2026-03", "zus", "--on", "2026-04-22"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := run(t, cmdPaid, "-c", cfg, "2026-03", "zus"); err == nil || !strings.Contains(err.Error(), "nothing new to record") {
 		t.Errorf("duplicate: %v", err)
 	}
+
 	if _, err := run(t, cmdPaid, "-c", cfg, "2026-03", "zus", "100"); err == nil {
 		t.Error("an AMOUNT for zus as a whole must be refused")
 	}
@@ -66,6 +73,7 @@ func TestCommands(t *testing.T) {
 		strings.Count(out, "[  OK  ]") != 1 {
 		t.Fatalf("paid after zus: %v\n%s", err, out)
 	}
+
 	for _, bad := range [][]string{{"2026-03", "ryczalt", "1e3"}, {"2026-03", "ryczalt", "0"},
 		{"2026-03", "--on", "2099-01-01"}, {"2026-03", "--on", "2026-02-27"}} {
 		var exit exitError
@@ -78,12 +86,14 @@ func TestCommands(t *testing.T) {
 	if err != nil || strings.Count(list, "\n") != 11 { // header and 10 payments
 		t.Fatalf("list: %v\n%s", err, list)
 	}
+
 	var extra string
 	for _, l := range strings.Split(list, "\n") {
 		if strings.Contains(l, "10.50") {
 			extra = strings.Fields(l)[0]
 		}
 	}
+
 	if out, err := run(t, cmdVoid, "-c", cfg, extra); err != nil || !strings.Contains(out, "voided "+extra) {
 		t.Errorf("void: %v %s", err, out)
 	}
@@ -95,6 +105,7 @@ func TestCommands(t *testing.T) {
 	if !errors.Is(err, errFailed) {
 		t.Errorf("April has no invoice after 15 May: want errFailed, got %v", err)
 	}
+
 	for _, want := range []string{
 		"2026-01  INV-02", "[  OK  ]",
 		"2026-03  INV-04     13 332.00     1 600  456.18  498.35  Mon 2026-04-20  [ WARN ] late, 2026-04-24",
@@ -115,10 +126,12 @@ func TestCommands(t *testing.T) {
 	if err != nil || !strings.Contains(rules, "social, preferential                     456.18  420.86 without chorobowa") {
 		t.Errorf("rules: %v\n%s", err, rules)
 	}
+
 	var usage exitError
 	if _, err := run(t, cmdRules, "26"); !errors.As(err, &usage) || usage.code != 2 {
 		t.Errorf("rules 26: want exit 2, got %v", err)
 	}
+
 	missing := filepath.Join(t.TempDir(), "missing.conf")
 	mustWrite(t, missing, []byte(strings.Replace(conf, root, "/nonexistent/archive", 1)))
 	if _, err := run(t, cmdStatus, "-c", missing); !errors.As(err, &usage) || usage.code != 2 {

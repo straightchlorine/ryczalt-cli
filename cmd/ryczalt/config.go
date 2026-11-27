@@ -54,6 +54,7 @@ func (c config) jpkMissing() []string {
 			m = append(m, k)
 		}
 	}
+
 	slices.Sort(m)
 	return m
 }
@@ -84,9 +85,11 @@ func parseConfig(r io.Reader) (config, error) {
 		if n == 1 {
 			line = strings.TrimPrefix(line, "\ufeff") // byte order mark some editors add
 		}
+
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+
 		if head := parseValue(line); strings.HasPrefix(head, "[") && strings.HasSuffix(head, "]") {
 			section = strings.TrimSpace(head[1 : len(head)-1])
 			if !slices.ContainsFunc(
@@ -95,16 +98,20 @@ func parseConfig(r io.Reader) (config, error) {
 			) {
 				return config{}, fmt.Errorf("line %d: unknown section [%s]", n, section)
 			}
+
 			continue
 		}
+
 		k, raw, ok := strings.Cut(line, "=")
 		if !ok {
 			return config{}, fmt.Errorf("line %d: not a key=value line: %q", n, line)
 		}
+
 		key := strings.TrimSpace(k)
 		if section != "" {
 			key = section + "." + key
 		}
+
 		if !slices.Contains(configKeys, key) {
 			return config{}, fmt.Errorf("line %d: unknown key %s", n, key)
 		}
@@ -119,6 +126,7 @@ func parseConfig(r io.Reader) (config, error) {
 
 	var errs []error
 	bad := func(key, msg string) { errs = append(errs, fmt.Errorf("%s: %s", key, msg)) }
+
 	required := func(key string) string {
 		v := vals[key]
 		if v == "" {
@@ -126,6 +134,7 @@ func parseConfig(r io.Reader) (config, error) {
 		}
 		return v
 	}
+
 	only := func(key, want string) {
 		if v := required(key); v != "" && v != want {
 			errs = append(
@@ -134,6 +143,7 @@ func parseConfig(r io.Reader) (config, error) {
 			)
 		}
 	}
+
 	oneOf := func(key string, allowed ...string) string {
 		v := required(key)
 		if v != "" && !slices.Contains(allowed, v) {
@@ -141,15 +151,18 @@ func parseConfig(r io.Reader) (config, error) {
 		}
 		return v
 	}
+
 	month := func(key string) time.Time {
 		v := vals[key]
 		if v == "" {
 			return time.Time{}
 		}
+
 		t, err := time.Parse("2006-01", v)
 		if err != nil {
 			bad(key, fmt.Sprintf("%q is not a month like 2026-01", v))
 		}
+
 		return t
 	}
 
@@ -158,14 +171,18 @@ func parseConfig(r io.Reader) (config, error) {
 	if c.archive != "" && !filepath.IsAbs(c.archive) {
 		bad("archive", fmt.Sprintf("%q must be an absolute path or start with ~/", c.archive))
 	}
+
 	if c.nip = required("tax.nip"); c.nip != "" && !validNIP(c.nip) {
 		bad("tax.nip", fmt.Sprintf("%q is not a valid NIP (10 digits, no dashes)", c.nip))
 	}
+
 	only("tax.form", "ryczalt")
 	only("tax.payment", "monthly")
 	only("tax.vat_status", "exempt")
+
 	required("tax.business_start")
 	c.businessStart = month("tax.business_start")
+
 	c.suspendedFrom, c.suspendedUntil = month("tax.suspended_from"), month("tax.suspended_until")
 	switch {
 	case !c.suspendedUntil.IsZero() && c.suspendedFrom.IsZero():
@@ -175,9 +192,11 @@ func parseConfig(r io.Reader) (config, error) {
 	case !c.suspendedFrom.IsZero() && !c.businessStart.IsZero() && c.suspendedFrom.Before(c.businessStart):
 		bad("tax.suspended_from", "before tax.business_start")
 	}
+
 	// the rates of art. 12 ust. 1 ustawy o zryczałtowanym podatku
 	c.rate = oneOf("tax.rate", "17", "15", "14", "12.5", "12", "10", "8.5", "5.5", "3")
 	c.revenueBasis = oneOf("tax.revenue_basis", "period_end", "service")
+
 	c.ulgaUntil = month("zus.ulga_until")
 	c.preferentialUntil = month("zus.preferential_until")
 	for _, p := range []struct {
@@ -188,11 +207,14 @@ func parseConfig(r io.Reader) (config, error) {
 			bad(p.key, "before tax.business_start")
 		}
 	}
+
 	if !c.ulgaUntil.IsZero() && !c.preferentialUntil.IsZero() &&
 		!c.preferentialUntil.After(c.ulgaUntil) {
 		bad("zus.preferential_until", "must come after zus.ulga_until")
 	}
+
 	c.chorobowa = oneOf("zus.chorobowa", "yes", "no") == "yes"
+
 	if v := required("client.payment_days"); v != "" {
 		if n, err := strconv.Atoi(v); err != nil || n < 0 || n > 365 {
 			bad("client.payment_days", fmt.Sprintf("%q is not a number of days", v))
@@ -200,6 +222,7 @@ func parseConfig(r io.Reader) (config, error) {
 			c.paymentDays = n
 		}
 	}
+
 	if c.clientCalendar = strings.Join(strings.Fields(required("client.calendar")), " "); c.clientCalendar != "" &&
 		!validCalendar(c.clientCalendar) {
 		bad(
@@ -210,15 +233,18 @@ func parseConfig(r io.Reader) (config, error) {
 			),
 		)
 	}
+
 	c.ksefBin = expandHome(vals["ksef.bin"])
 	c.ksefConfig = expandHome(vals["ksef.config"])
 	c.r2Bucket, c.r2Profile, c.r2Endpoint = vals["r2.bucket"], vals["r2.profile"], vals["r2.endpoint"]
 	c.jpkFirstName, c.jpkSurname, c.jpkEmail = vals["jpk.first_name"], vals["jpk.surname"], vals["jpk.email"]
+
 	if c.jpkBirthDate = vals["jpk.birth_date"]; c.jpkBirthDate != "" {
 		if _, err := time.Parse(time.DateOnly, c.jpkBirthDate); err != nil {
 			bad("jpk.birth_date", fmt.Sprintf("%q is not a date like 1990-05-17", c.jpkBirthDate))
 		}
 	}
+
 	if c.jpkTaxOffice = vals["jpk.tax_office"]; c.jpkTaxOffice != "" &&
 		!regexp.MustCompile(`^\d{4}$`).MatchString(c.jpkTaxOffice) {
 		bad(
@@ -229,6 +255,7 @@ func parseConfig(r io.Reader) (config, error) {
 			),
 		)
 	}
+
 	if c.r2Bucket == "" && (c.r2Profile != "" || c.r2Endpoint != "") {
 		bad("r2.bucket", "required when [r2] has a profile or an endpoint")
 	}
@@ -241,18 +268,21 @@ func parseValue(s string) string {
 	if q := strings.TrimLeft(s, " \t"); len(q) != len(s) && strings.HasPrefix(q, "#") {
 		return ""
 	}
+
 	s = strings.TrimSpace(s)
 	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') {
 		if end := strings.IndexByte(s[1:], s[0]); end >= 0 {
 			return s[1 : 1+end]
 		}
 	}
+
 	for i := 1; i < len(s); i++ {
 		if s[i] == '#' && (s[i-1] == ' ' || s[i-1] == '\t') {
 			s = s[:i]
 			break
 		}
 	}
+
 	return strings.TrimSpace(s)
 }
 
@@ -271,6 +301,7 @@ func validNIP(nip string) bool {
 	if len(nip) != 10 {
 		return false
 	}
+
 	sum := 0
 	for i := range 10 {
 		if nip[i] < '0' || nip[i] > '9' {
@@ -280,6 +311,7 @@ func validNIP(nip string) bool {
 			sum += []int{6, 5, 7, 2, 3, 4, 5, 6, 7}[i] * int(nip[i]-'0')
 		}
 	}
+
 	return sum%11 == int(nip[9]-'0')
 }
 
@@ -309,6 +341,7 @@ func loadConfig(flag string) (config, error) {
 	if err != nil {
 		return config{}, exitError{2, fmt.Errorf("%w; start from ryczalt.conf.example", err)}
 	}
+
 	c, err := parseConfig(bytes.NewReader(b))
 	if err != nil {
 		code := 2
@@ -317,9 +350,11 @@ func loadConfig(flag string) (config, error) {
 		}
 		return c, exitError{code, fmt.Errorf("%s:\n%w", path, err)}
 	}
+
 	if st, err := os.Stat(c.archive); err != nil || !st.IsDir() {
 		return c, exitError{2, fmt.Errorf("%s: archive %s is not a folder", path, c.archive)}
 	}
+
 	return c, nil
 }
 
@@ -334,6 +369,7 @@ func xdgPath(envVar, fallback, name string) string {
 		}
 		dir = filepath.Join(home, fallback)
 	}
+
 	return filepath.Join(dir, name)
 }
 

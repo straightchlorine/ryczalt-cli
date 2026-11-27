@@ -13,6 +13,7 @@ func TestContributions(t *testing.T) {
 	health := func(y, b int) amount { return healthMonthly(y, b) }
 	social := func(y int, pref, chor bool) amount { s, _ := socialMonthly(y, pref, chor); return s }
 	fpfs := func(y int, pref bool) amount { _, f := socialMonthly(y, pref, true); return f }
+
 	cases := []struct {
 		name string
 		got  amount
@@ -32,11 +33,13 @@ func TestContributions(t *testing.T) {
 		{"health 2027 unknown", health(2027, 1), "n/a"},
 		{"year without rules", social(2024, true, true), "n/a"},
 	}
+
 	for _, c := range cases {
 		if got := plnText(c.got); got != c.want {
 			t.Errorf("%s = %s, want %s", c.name, got, c.want)
 		}
 	}
+
 	// 2026 full ZUS with chorobowa and FP/FS, as ZUS publishes it.
 	if s, f := socialMonthly(2026, false, true); s.grosze+f.grosze != 192676 {
 		t.Errorf("full 2026 total = %d grosze, want 192676", s.grosze+f.grosze)

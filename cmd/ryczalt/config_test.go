@@ -30,6 +30,7 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	want := config{
 		archive:           "/srv/invoices",
 		nip:               "5260250274",
@@ -42,6 +43,7 @@ func TestParseConfig(t *testing.T) {
 		paymentDays:       7,
 		clientCalendar:    "PL",
 	}
+
 	if c != want {
 		t.Errorf("got %+v\nwant %+v", c, want)
 	}
@@ -71,11 +73,13 @@ func TestParseConfigErrors(t *testing.T) {
 		{"other tax form", "form=ryczalt", "form=liniowy", "tax.form=liniowy, only ryczalt is supported", true},
 		{"active VAT", "vat_status=exempt", "vat_status=active", "only exempt is supported", true},
 	}
+
 	for _, c := range cases {
 		in := strings.Replace(validConfig, c.old, c.new, 1)
 		if in == validConfig {
 			t.Fatalf("%s: %q not found in validConfig", c.name, c.old)
 		}
+
 		_, err := parseConfig(strings.NewReader(in))
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v, want %q", c.name, err, c.want)

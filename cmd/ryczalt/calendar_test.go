@@ -22,6 +22,7 @@ func TestEaster(t *testing.T) {
 		2027: "2027-03-28", 2028: "2028-04-16", 2029: "2029-04-01",
 		2030: "2030-04-21",
 	}
+
 	for y, w := range want {
 		if got := easter(y).Format(time.DateOnly); got != w {
 			t.Errorf("easter(%d) = %s, want %s", y, got, w)
@@ -81,6 +82,7 @@ func TestShiftDeadline(t *testing.T) {
 		{"DE-SN", "2026-11-18", "2026-11-19", "Buss- und Bettag in Saxony"},
 		{"DE-BY", "2026-11-18", "2026-11-18", "Bavaria: school day off only"},
 	}
+
 	for _, c := range cases {
 		if got := shiftDeadline(c.cal, day(t, c.in)).Format(time.DateOnly); got != c.want {
 			t.Errorf("shiftDeadline(%s, %s) = %s, want %s (%s)", c.cal, c.in, got, c.want, c.why)
@@ -102,24 +104,29 @@ func TestHolidaysGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	seen := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
+
 		f := strings.Fields(line)
 		cal, year := f[0], f[1]
 		seen[cal] = true
+
 		want := map[string]bool{}
 		for _, d := range f[2:] {
 			want[year+"-"+d] = true
 		}
+
 		for d := day(t, year+"-01-01"); d.Format("2006") == year; d = d.AddDate(0, 0, 1) {
 			if k := d.Format(time.DateOnly); isHoliday(cal, d) != want[k] {
 				t.Errorf("%s %s: isHoliday = %v, reference says %v", cal, k, !want[k], want[k])
 			}
 		}
 	}
+
 	if len(seen) != 1+len(deStates) {
 		t.Errorf("golden file covers %d calendars, want %d", len(seen), 1+len(deStates))
 	}
@@ -135,6 +142,7 @@ func TestStateHolidaysByYear(t *testing.T) {
 		{"DE-TH", "2018-09-20", false}, {"DE-TH", "2019-09-20", true},
 		{"DE-NI", "2016-10-31", false}, {"DE-NI", "2018-10-31", true}, {"DE-SN", "2016-10-31", true},
 	}
+
 	for _, c := range cases {
 		if got := isHoliday(c.cal, day(t, c.date)); got != c.want {
 			t.Errorf("%s %s: got %v", c.cal, c.date, got)
@@ -148,6 +156,7 @@ func TestUnknownCalendarPanics(t *testing.T) {
 			t.Error("want a panic for calendar pl")
 		}
 	}()
+
 	isHoliday("pl", day(t, "2026-12-25"))
 }
 
@@ -158,6 +167,7 @@ func TestCalendarExtras(t *testing.T) {
 			t.Errorf("validCalendar(%q) = %v", cal, got)
 		}
 	}
+
 	munich := "DE-BY +08-15"
 	if !isHoliday(munich, day(t, "2029-08-15")) || isHoliday("DE-BY", day(t, "2029-08-15")) {
 		t.Error("15 August is a holiday in Munich, not in all of Bavaria")

@@ -45,11 +45,13 @@ func ewidRows(c config, invs []invoice, year int, cacheDir string) ([]ewidRow, [
 		if d.Year() != year {
 			continue
 		}
+
 		g, r, err := revenuePLN(inv, c.revenueBasis, cacheDir)
 		if err != nil {
 			notes = append(notes, fmt.Sprintf("%s: %v; left out", inv.number, err))
 			continue
 		}
+
 		note := ""
 		if inv.currency != "PLN" {
 			note = fmt.Sprintf(
@@ -61,17 +63,21 @@ func ewidRows(c config, invs []invoice, year int, cacheDir string) ([]ewidRow, [
 				r.Date,
 			)
 		}
+
 		rows = append(rows, ewidRow{
 			entered: maxTime(inv.issued, d), revenue: d, ksef: inv.ksefNumber, doc: inv.number,
 			country: inv.buyerCode, buyer: inv.buyerID, shown: inv.buyerText(), vat: inv.buyerVAT, grosze: g, rate: c.rate, note: note,
 		})
 	}
+
 	slices.SortStableFunc(rows, func(a, b ewidRow) int {
 		return cmp.Or(a.revenue.Compare(b.revenue), strings.Compare(a.doc, b.doc))
 	})
+
 	for i := range rows {
 		rows[i].lp = i + 1
 	}
+
 	return rows, notes
 }
 
@@ -85,22 +91,27 @@ func grosz(g int64) string { return fmt.Sprintf("%d.%02d", g/100, g%100) }
 func writeEwidCSV(w *report, rows []ewidRow) error {
 	var b bytes.Buffer
 	cw := csv.NewWriter(&b)
+
 	head := []string{
 		"Lp.", "Data wpisu", "Data uzyskania przychodu", "Numer KSeF", "Numer dowodu",
 		"Identyfikator podatkowy kontrahenta",
 	}
+
 	for _, r := range ewidRates {
 		head = append(head, r+"%")
 	}
+
 	if err := cw.Write(append(head, "Ogółem", "Uwagi")); err != nil {
 		return err
 	}
+
 	var total int64
 	for _, r := range rows {
 		rec := []string{
 			strconv.Itoa(r.lp), r.entered.Format(time.DateOnly), r.revenue.Format(time.DateOnly),
 			r.ksef, r.doc, r.shown,
 		}
+
 		for _, rate := range ewidRates {
 			v := ""
 			if rate == r.rate {
@@ -108,15 +119,19 @@ func writeEwidCSV(w *report, rows []ewidRow) error {
 			}
 			rec = append(rec, v)
 		}
+
 		if err := cw.Write(append(rec, grosz(r.grosze), r.note)); err != nil {
 			return err
 		}
+
 		total += r.grosze
 	}
+
 	cw.Flush()
 	if err := cw.Error(); err != nil {
 		return err
 	}
+
 	w.printf("%s", b.String())
 	return nil
 }
@@ -141,12 +156,14 @@ func jpkEWP(c config, rows []ewidRow, year int, purpose int, created time.Time) 
 			fmt.Fprintf(&b, "%s<%s>%s</%s>\n", indent, name, esc(value), name)
 		}
 	}
+
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	fmt.Fprintf(&b, "<JPK xmlns=\"%s\" xmlns:etd=\"%s\">\n", jpkNS, etdNS)
 	b.WriteString("  <Naglowek>\n")
 	b.WriteString(
 		`    <KodFormularza kodSystemowy="JPK_EWP (4)" wersjaSchemy="1-0">JPK_EWP</KodFormularza>` + "\n",
 	)
+
 	el("    ", "WariantFormularza", "4")
 	el("    ", "CelZlozenia", strconv.Itoa(purpose))
 	el("    ", "DataWytworzeniaJPK", created.UTC().Format("2006-01-02T15:04:05Z"))
@@ -154,6 +171,7 @@ func jpkEWP(c config, rows []ewidRow, year int, purpose int, created time.Time) 
 	el("    ", "DataDo", fmt.Sprintf("%d-12-31", year))
 	el("    ", "KodUrzedu", c.jpkTaxOffice)
 	b.WriteString("  </Naglowek>\n")
+
 	b.WriteString("  <Podmiot1 rola=\"Podatnik\">\n    <OsobaFizyczna>\n")
 	el("      ", "etd:NIP", c.nip)
 	el("      ", "etd:ImiePierwsze", c.jpkFirstName)
@@ -161,6 +179,7 @@ func jpkEWP(c config, rows []ewidRow, year int, purpose int, created time.Time) 
 	el("      ", "etd:DataUrodzenia", c.jpkBirthDate)
 	el("      ", "Email", c.jpkEmail)
 	b.WriteString("    </OsobaFizyczna>\n  </Podmiot1>\n")
+
 	var total int64
 	for _, r := range rows {
 		b.WriteString("  <EWPWiersz>\n")
@@ -169,20 +188,24 @@ func jpkEWP(c config, rows []ewidRow, year int, purpose int, created time.Time) 
 		el("    ", "K_3", r.revenue.Format(time.DateOnly))
 		el("    ", "K_4", r.doc)
 		el("    ", "K_5", r.ksef)
+
 		if r.buyer != "" {
 			el("    ", "K_6", r.country)
 			el("    ", "K_7", r.buyer)
 		}
+
 		el("    ", "K_8", grosz(r.grosze))
 		el("    ", "K_9", r.rate)
 		el("    ", "K_10", r.note)
 		b.WriteString("  </EWPWiersz>\n")
 		total += r.grosze
 	}
+
 	b.WriteString("  <EWPCtrl>\n")
 	el("    ", "LiczbaWierszy", strconv.Itoa(len(rows)))
 	el("    ", "SumaPrzychodow", grosz(total))
 	b.WriteString("  </EWPCtrl>\n</JPK>\n")
+
 	return b.Bytes()
 }
 
@@ -196,20 +219,24 @@ func cmdEwid(args []string) error {
 		false,
 		"with --jpk: a correction (CelZlozenia 2) of a file already sent",
 	)
+
 	flags.Usage = func() {
 		fmt.Fprintln(
 			os.Stderr,
 			"usage: ryczalt ewid [-c CONFIG] [--csv | --jpk [--correction]] [YEAR]",
 		)
 	}
+
 	if err := parseFlags(flags, args); err != nil {
 		return exitError{2, err}
 	}
+
 	today := todayWarsaw()
 	year := today.Year()
 	if today.Month() <= time.May {
 		year-- // until the PIT-28 and JPK deadlines are past, last year
 	}
+
 	switch {
 	case flags.NArg() == 1 && yearArg.MatchString(flags.Arg(0)):
 		year, _ = strconv.Atoi(flags.Arg(0)) // four digits, checked
@@ -217,10 +244,12 @@ func cmdEwid(args []string) error {
 		flags.Usage()
 		return exitError{2, errors.New("wrong arguments")}
 	}
+
 	c, err := loadConfig(*cfgFlag)
 	if err != nil {
 		return err
 	}
+
 	if *asJPK {
 		if missing := c.jpkMissing(); len(missing) > 0 {
 			return exitError{
@@ -229,10 +258,12 @@ func cmdEwid(args []string) error {
 			}
 		}
 	}
+
 	invs, found, err := readArchive(c.archive, c.nip)
 	if err != nil {
 		return err
 	}
+
 	rows, notes := ewidRows(c, invs, year, cacheDir())
 	found = append(found, asFindings("rates", notes)...)
 
@@ -251,14 +282,17 @@ func cmdEwid(args []string) error {
 	default:
 		printEwid(out, c, rows, year)
 	}
+
 	if err := out.flush(); err != nil {
 		return err
 	}
+
 	if slices.ContainsFunc(found, func(f finding) bool { return f.level == levelWarn }) {
 		errs := newReport(os.Stderr) // never into the CSV or the XML
 		printFindings(errs, found, levelWarn)
 		return errs.flush()
 	}
+
 	return nil
 }
 
@@ -283,14 +317,17 @@ func printEwid(w *report, c config, rows []ewidRow, year int) {
 			),
 		),
 	)
+
 	if len(rows) == 0 {
 		w.println("No revenue in the year.")
 		return
 	}
+
 	const colLp, colEntered, colDoc, colKSeF, colBuyer = 0, 1, 3, 4, 5
 	table := [][]string{
 		{"Lp", "Entered", "Revenue", "Document", "KSeF number", "Buyer", c.rate + "% PLN"},
 	}
+
 	var total int64
 	late, noVAT := map[int]bool{}, map[int]bool{}
 	for i, r := range rows {
@@ -299,10 +336,22 @@ func printEwid(w *report, c config, rows []ewidRow, year int) {
 			r.doc, cmp.Or(r.ksef, "-"), cmp.Or(r.shown, "-"), plnText(amount{r.grosze, official}),
 		})
 		total += r.grosze
+
 		late[i+1] = r.entered.After(entryDeadline(r.revenue))
 		noVAT[i+1] = r.buyer != "" && !r.vat
+
+		if !colours(w) { // no colour to flag the cells with: mark them
+			if late[i+1] {
+				table[i+1][colEntered] += "*"
+			}
+			if noVAT[i+1] {
+				table[i+1][colBuyer] += "*"
+			}
+		}
 	}
+
 	table = append(table, []string{"", "", "", "", "", "total", plnText(amount{total, official})})
+
 	right := []bool{true, false, false, false, false, false, true}
 	printTable(w, table, right, func(row, col int) string {
 		switch {
@@ -317,8 +366,10 @@ func printEwid(w *report, c config, rows []ewidRow, year int) {
 		case col == colDoc:
 			return cyan
 		}
+
 		return ""
 	})
+
 	var legend []string
 	if slices.Contains(slices.Collect(maps.Values(late)), true) {
 		legend = append(legend, "entered after the 20th of the next month (par. 6)")
@@ -326,9 +377,15 @@ func printEwid(w *report, c config, rows []ewidRow, year int) {
 	if slices.Contains(slices.Collect(maps.Values(noVAT)), true) {
 		legend = append(legend, "buyer named without a VAT number (ryczalt check)")
 	}
+
 	if len(legend) > 0 {
+		mark := paint(w, yellow, "yellow")
+		if !colours(w) {
+			mark = "*"
+		}
+
 		w.println(
-			"\n" + paint(w, yellow, "yellow") + paint(w, dim, ": "+strings.Join(legend, "; ")),
+			"\n" + mark + paint(w, dim, ": "+strings.Join(legend, "; ")),
 		)
 	}
 }

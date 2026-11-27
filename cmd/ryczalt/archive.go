@@ -53,6 +53,7 @@ func (inv invoice) buyerText() string {
 	case inv.buyerVAT || inv.buyerCode == "":
 		return inv.buyerCode + inv.buyerID
 	}
+
 	return inv.buyerCode + " " + inv.buyerID
 }
 
@@ -79,6 +80,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
 	sent := map[string]invoice{}  // number -> invoice from FA(3) XML
 	draft := map[string]invoice{} // number -> invoice from invoice.json
 	type ksef struct{ number, mode string }
@@ -89,6 +91,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 		k.mode = cmp.Or(mode, k.mode)
 		ksefOf[number] = k
 	}
+
 	var found []finding
 	// warn: may change the numbers, shown by status; note: only by check
 	warn := func(format string, a ...any) {
@@ -102,6 +105,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 		if !folderName.MatchString(d.Name()) {
 			continue
 		}
+
 		folder := d.Name()
 		// a month folder may be a symlink to elsewhere; WalkDir does not follow it
 		dir, err := filepath.EvalSymlinks(filepath.Join(root, folder))
@@ -109,19 +113,24 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 			warn("%s: %v; skipped", folder, err)
 			continue
 		}
+
 		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 			continue
 		}
+
 		err = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 			if err != nil || e.IsDir() {
 				return err
 			}
+
 			r, _ := filepath.Rel(dir, path)
 			rel := filepath.Join(folder, r)
+
 			name := e.Name()
 			if !strings.HasSuffix(name, ".xml") && name != "invoice.json" && name != "meta.json" {
 				return nil
 			}
+
 			if info, err := os.Stat(path); err != nil {
 				warn("%s: %v; skipped", rel, err)
 				return nil
@@ -129,6 +138,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 				note(levelInfo, "archive", "%s: larger than %d MB, not an invoice; skipped", rel, maxFileSize>>20)
 				return nil
 			}
+
 			b, err := os.ReadFile(path)
 			if err != nil {
 				warn("%s: %v; skipped", rel, err)
@@ -142,6 +152,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 					warn("%s: %v; skipped", rel, err)
 					return nil
 				}
+
 				inv.folder, inv.source = folder, rel
 				if prev, ok := draft[inv.number]; ok {
 					if diff := differ(prev, inv); diff != "" {
@@ -158,6 +169,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 					warn("%s: %v; skipped", rel, err)
 					return nil
 				}
+
 				if m.Aes_key_hex != "" {
 					note(
 						levelCheck,
@@ -166,6 +178,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 						rel,
 					)
 				}
+
 				if k := ksefOf[strings.TrimSpace(m.Invoice_number)]; k.number == "" {
 					setKSeF(
 						strings.TrimSpace(m.Invoice_number),
@@ -180,6 +193,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 					warn("%s: not readable XML (%v); skipped", rel, err)
 					return nil
 				}
+
 				switch kind {
 				case "Faktura":
 					inv, seller, err := readFA(b)
@@ -203,6 +217,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 					case err != nil:
 						return fmt.Errorf("%s: %w", rel, err)
 					}
+
 					inv.folder, inv.source = folder, rel
 					if prev, ok := sent[inv.number]; ok {
 						if diff := differ(prev, inv); diff != "" {
@@ -212,6 +227,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 						return nil
 					}
 					sent[inv.number] = inv
+
 				case "Potwierdzenie":
 					var u struct {
 						Docs []struct {
@@ -220,10 +236,12 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 							Mode   string `xml:"TrybWysylki"`
 						} `xml:"Dokument"`
 					}
+
 					if err := xml.Unmarshal(b, &u); err != nil {
 						warn("%s: %v; skipped", rel, err)
 						return nil
 					}
+
 					for _, d := range u.Docs {
 						if n := strings.TrimSpace(d.Number); n != "" {
 							setKSeF(n, strings.TrimSpace(d.KSeF), strings.TrimSpace(d.Mode))
@@ -231,6 +249,7 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 					}
 				}
 			}
+
 			return nil
 		})
 		if err != nil {
@@ -257,21 +276,27 @@ func readArchive(root, nip string) ([]invoice, []finding, error) {
 				note(levelInfo, "drafts", "%s: %s is dated %s, the XML sent to KSeF %s", n, inv.source,
 					inv.issued.Format(time.DateOnly), s.issued.Format(time.DateOnly))
 			}
+
 			continue
 		}
+
 		out = append(out, inv)
 	}
+
 	for _, inv := range sent {
 		out = append(out, inv)
 	}
+
 	for i := range out {
 		k := ksefOf[out[i].number]
 		out[i].ksefNumber, out[i].ksefMode = k.number, k.mode
 	}
+
 	slices.SortFunc(out, func(a, b invoice) int {
 		return cmp.Or(a.issued.Compare(b.issued), strings.Compare(a.number, b.number))
 	})
 	slices.SortStableFunc(found, func(a, b finding) int { return strings.Compare(a.text, b.text) })
+
 	return out, found, nil
 }
 
@@ -286,6 +311,7 @@ func differ(a, b invoice) string {
 		d = append(d, fmt.Sprintf("service end (%s vs %s)",
 			a.serviceEnd.Format(time.DateOnly), b.serviceEnd.Format(time.DateOnly)))
 	}
+
 	if a.currency != b.currency {
 		d = append(d, fmt.Sprintf("currency (%s vs %s)", a.currency, b.currency))
 	}
@@ -295,6 +321,7 @@ func differ(a, b invoice) string {
 			fmt.Sprintf("total (%s vs %s)", a.total.FloatString(2), b.total.FloatString(2)),
 		)
 	}
+
 	return strings.Join(d, ", ")
 }
 
@@ -307,6 +334,7 @@ func xmlRoot(b []byte) (string, error) {
 		if err != nil {
 			return "", err
 		}
+
 		if s, ok := t.(xml.StartElement); ok {
 			return s.Name.Local, nil
 		}
@@ -339,17 +367,21 @@ func readFA(b []byte) (invoice, string, error) {
 			} `xml:",any"`
 		} `xml:"Fa"`
 	}
+
 	if err := xml.Unmarshal(b, &f); err != nil {
 		return invoice{}, "", fmt.Errorf("%w (%v)", errUnreadable, err)
 	}
+
 	fa := f.Fa
 	number := strings.TrimSpace(fa.P2)
 	seller := strings.TrimSpace(f.Seller)
 	partial := invoice{number: number} // enough to name it in an error
+
 	if kind := strings.TrimSpace(fa.Kind); kind != "VAT" {
 		return partial, seller, fmt.Errorf("invoice %s is of kind %q; only VAT (a plain invoice) "+
 			"is supported, corrections and advance invoices are not yet", number, kind)
 	}
+
 	for _, o := range fa.Other {
 		if strings.HasPrefix(o.XMLName.Local, "P_14_") {
 			if v, ok := new(big.Rat).SetString(strings.TrimSpace(o.Value)); !ok || v.Sign() != 0 {
@@ -358,17 +390,20 @@ func readFA(b []byte) (invoice, string, error) {
 			}
 		}
 	}
+
 	end := cmp.Or(strings.TrimSpace(fa.P6Do), strings.TrimSpace(fa.P6),
 		strings.TrimSpace(fa.P1)) // no separate service date: the issue date is the service date
 	issued, err1 := time.Parse(time.DateOnly, strings.TrimSpace(fa.P1))
 	serviceEnd, err2 := time.Parse(time.DateOnly, end)
 	total, ok := new(big.Rat).SetString(strings.TrimSpace(fa.P15))
 	currency := strings.ToUpper(strings.TrimSpace(fa.Currency))
+
 	if number == "" || err1 != nil || err2 != nil || !ok || !currencyCode.MatchString(currency) {
 		return partial, seller, errors.New(
 			"FA(3) without a readable P_1, P_2, P_6, P_15 or KodWaluty",
 		)
 	}
+
 	inv := invoice{
 		number:     number,
 		issued:     issued,
@@ -376,6 +411,7 @@ func readFA(b []byte) (invoice, string, error) {
 		currency:   currency,
 		total:      total,
 	}
+
 	switch b := f.Buyer; {
 	case strings.TrimSpace(b.NIP) != "":
 		inv.buyerCode, inv.buyerID, inv.buyerVAT = "PL", strings.TrimSpace(b.NIP), true
@@ -388,6 +424,7 @@ func readFA(b []byte) (invoice, string, error) {
 	case strings.TrimSpace(b.NrID) != "":
 		inv.buyerCode, inv.buyerID = strings.TrimSpace(b.KodKraju), strings.TrimSpace(b.NrID)
 	}
+
 	return inv, seller, nil
 }
 
@@ -406,9 +443,11 @@ func readInvoify(b []byte) (invoice, error) {
 			TotalAmount   json.Number
 		}
 	}
+
 	if err := json.Unmarshal(b, &j); err != nil {
 		return invoice{}, err
 	}
+
 	d := j.Details
 	number := strings.TrimSpace(d.InvoiceNumber)
 	t, err := time.Parse(time.RFC3339, strings.TrimSpace(d.InvoiceDate))
@@ -416,14 +455,17 @@ func readInvoify(b []byte) (invoice, error) {
 		return invoice{}, fmt.Errorf("no invoice number or date")
 	}
 	y, m, day := t.In(warsaw).Date()
+
 	total, ok := new(big.Rat).SetString(d.TotalAmount.String())
 	if !ok {
 		return invoice{}, fmt.Errorf("no total amount")
 	}
+
 	currency := strings.ToUpper(strings.TrimSpace(d.Currency))
 	if !currencyCode.MatchString(currency) {
 		return invoice{}, fmt.Errorf("currency %q is not a three-letter code", d.Currency)
 	}
+
 	inv := invoice{
 		number:     number,
 		issued:     time.Date(y, m, day, 0, 0, 0, 0, time.UTC),
@@ -431,6 +473,7 @@ func readInvoify(b []byte) (invoice, error) {
 		currency:   currency,
 		total:      total,
 	}
+
 	// the buyer's VAT id, as the earlier invoices put it: a custom field
 	for _, in := range j.Receiver.CustomInputs {
 		k := strings.ToUpper(strings.TrimSpace(in.Key))
@@ -444,6 +487,7 @@ func readInvoify(b []byte) (invoice, error) {
 			break
 		}
 	}
+
 	return inv, nil
 }
 
@@ -478,6 +522,7 @@ func checkInvoices(invs []invoice) []finding {
 		if inv.issued.Before(ksefStart) {
 			continue
 		}
+
 		switch {
 		case inv.ksefNumber == "":
 			out = append(
@@ -507,6 +552,7 @@ func checkInvoices(invs []invoice) []finding {
 				},
 			)
 		}
+
 		if inv.buyerID != "" && !inv.buyerVAT && euVAT[inv.buyerCode] {
 			out = append(
 				out,
@@ -519,6 +565,7 @@ func checkInvoices(invs []invoice) []finding {
 				},
 			)
 		}
+
 		end := inv.serviceEnd
 		by := shiftDeadline("PL", time.Date(end.Year(), end.Month()+1, 15, 0, 0, 0, 0, time.UTC))
 		if inv.issued.After(by) {
@@ -537,6 +584,7 @@ func checkInvoices(invs []invoice) []finding {
 			)
 		}
 	}
+
 	return out
 }
 
@@ -548,25 +596,30 @@ func printFindings(w *report, fs []finding, levels ...string) (warned bool) {
 		if !slices.Contains(levels, f.level) {
 			continue
 		}
+
 		if _, ok := byGroup[f.group]; !ok {
 			groups = append(groups, f.group)
 		}
 		byGroup[f.group] = append(byGroup[f.group], f)
 	}
+
 	for _, g := range groups {
 		warn := slices.ContainsFunc(
 			byGroup[g],
 			func(f finding) bool { return f.level != levelInfo },
 		)
+
 		t := tag(w, cyan, "INFO")
 		if warn {
 			t, warned = tag(w, yellow, "WARN"), true
 		}
+
 		w.println(t, g)
 		for _, f := range byGroup[g] {
 			w.println("        ", f.text)
 		}
 	}
+
 	return warned
 }
 
