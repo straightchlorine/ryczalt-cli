@@ -1,0 +1,46 @@
+INHERIT: mkdocs.yml
+site_description: A command-line tool for Polish sole traders on ryczałt. It works out revenue in PLN at the NBP rate, ryczałt, ZUS contributions and payment deadlines, sends invoices to KSeF and gives the PIT-28 figures.
+site_url: https://ryczalt.piotrkrzysztof.dev/en/
+docs_dir: docs-en
+site_dir: site/en
+edit_uri: src/branch/main/docs-en/
+theme:
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+
+nav:
+  - Introduction: index.md
+  - Configuration: configuration.md
+  - Invoice archive: archive.md
+  - Commands: commands.md
+  - Year-end: year.md
+  - How it calculates: rules.md
+  - About: about.md
+
+extra:
+  og_locale: en_US
+  og_locale_alternate: pl_PL
+  social:
+    - icon: fontawesome/solid/globe
+      link: https://piotrkrzysztof.dev
+      name: piotrkrzysztof.dev
+    - icon: simple/codeberg
+      link: https://codeberg.org/piotrkrzysztof/ryczalt-cli
+      name: Source code on Codeberg
+    - icon: fontawesome/brands/github
+      link: https://github.com/straightchlorine/ryczalt-cli
+      name: Copy on GitHub
