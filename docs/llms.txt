@@ -1,0 +1,24 @@
+# ryczalt-cli
+
+> Narzędzie wiersza poleceń do rozliczeń jednoosobowej działalności na ryczałcie. Czyta archiwum faktur (jeden folder RRRR-MM na miesiąc) i pokazuje miesiąc po miesiącu przychód, ryczałt, składki ZUS i terminy płatności, a na koniec roku kwoty do PIT-28 i rocznego rozliczenia składki zdrowotnej.
+
+Program jest napisany w Go i korzysta wyłącznie z biblioteki standardowej. Zapisuje wpłaty, przygotowuje kolejną fakturę jako plik Invoify, wysyła ją do KSeF przez ksef-cli, prowadzi ewidencję przychodów (tabela, CSV, JPK_EWP) i obsługuje zawieszenie działalności. Obsługuje jeden przypadek: ryczałt, zwolnienie z VAT (art. 113) i zaliczki miesięczne. Ten sam serwis istnieje po angielsku pod adresem https://ryczalt.piotrkrzysztof.dev/en/.
+
+## Strony
+
+- [Wprowadzenie](https://ryczalt.piotrkrzysztof.dev/): co robi narzędzie, funkcje, instalacja, pierwsze polecenia i comiesięczna rutyna
+- [Konfiguracja](https://ryczalt.piotrkrzysztof.dev/configuration/): plik ryczalt.conf, kolejność wyszukiwania, sekcje tax, zus, client, ksef, r2 i jpk oraz dozwolone wartości
+- [Archiwum faktur](https://ryczalt.piotrkrzysztof.dev/archive/): układ folderów RRRR-MM, pliki, które program czyta i zapisuje, oraz to, czego nie nadpisuje
+- [Polecenia](https://ryczalt.piotrkrzysztof.dev/commands/): wszystkie polecenia z opcjami, przykładowym wynikiem i kodami wyjścia
+- [Rozliczenie roku](https://ryczalt.piotrkrzysztof.dev/year/): kwoty do PIT-28, ewidencja przychodów i JPK_EWP, roczne rozliczenie składki zdrowotnej, blok XII DRA i zawieszona działalność
+- [Jak liczy](https://ryczalt.piotrkrzysztof.dev/rules/): data przychodu i kurs NBP, ryczałt narastająco, etapy ZUS, progi składki zdrowotnej, terminy i kalendarze świąt wraz ze źródłami
+- [O projekcie](https://ryczalt.piotrkrzysztof.dev/about/): czego narzędzie nie robi, układ kodu, testy, licencja i autor
+
+## Opcjonalne
+
+- [Repozytorium](https://codeberg.org/piotrkrzysztof/ryczalt-cli): kod źródłowy i wydania na Codeberg
+- [Kopia na GitHubie](https://github.com/straightchlorine/ryczalt-cli): kopia repozytorium
+- [Wersja angielska](https://ryczalt.piotrkrzysztof.dev/en/): ta sama dokumentacja po angielsku
+- [Autor](https://piotrkrzysztof.dev/): Piotr Krzysztof Lis
+
+Bogu samemu - cześć i chwała na wieki wieków.

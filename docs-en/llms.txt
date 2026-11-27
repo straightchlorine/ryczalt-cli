@@ -1,0 +1,24 @@
+# ryczalt-cli
+
+> A command-line tool for the bookkeeping of a sole proprietorship on ryczałt. It reads an invoice archive (one YYYY-MM folder per month) and shows, month by month, the revenue, the ryczałt, the ZUS contributions and the payment deadlines, and at the end of the year the figures for PIT-28 and for the annual health contribution settlement.
+
+The program is written in Go and uses only the standard library. It records payments, prepares the next invoice as an Invoify file, submits it to KSeF through ksef-cli, keeps the revenue register (table, CSV, JPK_EWP) and handles a suspended business. It handles one setup: ryczałt, VAT-exempt under art. 113 and monthly payments. The same site exists in Polish at https://ryczalt.piotrkrzysztof.dev/.
+
+## Pages
+
+- [Introduction](https://ryczalt.piotrkrzysztof.dev/en/): what the tool does, features, installation, the first commands and the monthly routine
+- [Configuration](https://ryczalt.piotrkrzysztof.dev/en/configuration/): the ryczalt.conf file, the lookup order, the tax, zus, client, ksef, r2 and jpk sections and the accepted values
+- [Invoice archive](https://ryczalt.piotrkrzysztof.dev/en/archive/): the YYYY-MM folder layout, the files the program reads and writes, and what it never overwrites
+- [Commands](https://ryczalt.piotrkrzysztof.dev/en/commands/): every command with its options, sample output and exit codes
+- [Year-end](https://ryczalt.piotrkrzysztof.dev/en/year/): PIT-28 figures, the revenue register and JPK_EWP, the annual health contribution settlement, DRA block XII and a suspended business
+- [How it calculates](https://ryczalt.piotrkrzysztof.dev/en/rules/): the revenue date and the NBP rate, cumulative ryczałt, ZUS phases, health brackets, deadlines and holiday calendars, with sources
+- [About](https://ryczalt.piotrkrzysztof.dev/en/about/): what the tool does not do, code layout, tests, license and author
+
+## Optional
+
+- [Repository](https://codeberg.org/piotrkrzysztof/ryczalt-cli): source code and releases on Codeberg
+- [Copy on GitHub](https://github.com/straightchlorine/ryczalt-cli): a copy of the repository
+- [Polish version](https://ryczalt.piotrkrzysztof.dev/): the same documentation in Polish
+- [Author](https://piotrkrzysztof.dev/): Piotr Krzysztof Lis
+
+To the only God, be honour and glory for ever and ever.
