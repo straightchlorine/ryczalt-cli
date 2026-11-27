@@ -2,8 +2,8 @@
 
 - Sitemap lastmod is the date of the last commit touching the page's source.
 - The homepage og:title / twitter:title are made to match <title>.
-- Post-render cleanup: drop Material's relative hreflang links (hreflang pairs
-  live in overrides/sitemap.xml) and name the search dialog for screen readers.
+- Post-render cleanup: drop Material's relative hreflang links (our own pairs live in
+  overrides/main.html and overrides/sitemap.xml) and name the search dialog for screen readers.
   404.html gets the same cleanup via on_post_template.
 """
 
@@ -21,6 +21,8 @@ from mkdocs.plugins import event_priority
 MATERIAL_HREFLANG = re.compile(
     r'\s*<link rel="alternate" href="[^"]*" hreflang="[^"]*">'
 )
+# our own head alternates (overrides/main.html) have an absolute href; anything else is Material's
+HEAD_ALTERNATE = re.compile(r'<link rel="alternate"[^>]*hreflang="[^"]*"[^>]*>')
 TITLE_TAG = re.compile(r'(<meta property="(?:og|twitter):title" content=")([^"]*)(")')
 # the social plugin emits twitter:* with property= only; crawlers read name=
 TWITTER_META = re.compile(r'<meta property="(twitter:[a-z:]+)"')
@@ -60,7 +62,8 @@ def _clean(output, config, where):
         f'data-md-component="search" role="dialog" aria-label="{label}"',
     )
     head = output.split("</head>", 1)[0]
-    if "hreflang=" in head or 'role="dialog">' in output:  # Material markup changed
+    stray = [a for a in HEAD_ALTERNATE.findall(head) if 'href="https://' not in a]
+    if stray or 'role="dialog">' in output:
         log.warning(f"{where}: Material markup changed, update hooks/seo.py patterns")
     return output
 
