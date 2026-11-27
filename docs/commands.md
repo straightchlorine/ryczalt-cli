@@ -122,6 +122,7 @@ Wynik `ryczalt send`, gdy ksef-cli nie ma `env=prod` w konfiguracji (domyślnie 
 
 ```
 [ WARN ] ksef-cli is set to env=test: this goes to the KSeF test environment, not to the real one
+[ INFO ] rate 4.3955 PLN per EUR, NBP table 212/A/NBP/2026 of 2026-10-30, as in the revenue register
 ```
 
 Odmawia, gdy:

@@ -122,6 +122,7 @@ The result of `ryczalt send` when ksef-cli's config does not have `env=prod` (th
 
 ```
 [ WARN ] ksef-cli is set to env=test: this goes to the KSeF test environment, not to the real one
+[ INFO ] rate 4.3955 PLN per EUR, NBP table 212/A/NBP/2026 of 2026-10-30, as in the revenue register
 ```
 
 It refuses when:
