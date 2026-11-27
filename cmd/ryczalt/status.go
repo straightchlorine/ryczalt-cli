@@ -197,6 +197,53 @@ func buildYear(
 	return months, notes
 }
 
+// inCarryWindow says the view of year also lists last year's open months:
+// from 1 January until last year's health settlement is due.
+func inCarryWindow(year int, today time.Time) bool {
+	return year == today.Year() && !today.After(shiftDeadline("PL", time.Date(year, 5, 20, 0, 0, 0, 0, time.UTC)))
+}
+
+// carriedOver is last year's months with something still open, while the
+// window lasts, and the notes of building them (only when there are any).
+func carriedOver(
+	c config,
+	invs []invoice,
+	pays []payment,
+	year int,
+	today time.Time,
+	cacheDir string,
+) ([]month, []string) {
+	if !inCarryWindow(year, today) {
+		return nil, nil
+	}
+
+	last, notes := buildYear(c, invs, pays, year-1, today, cacheDir)
+
+	var open []month
+	for _, m := range last {
+		if m.zusOpen() || m.ryczOwed() || (!m.invoiced && !m.suspended) {
+			open = append(open, m)
+		}
+	}
+
+	if len(open) == 0 {
+		return nil, nil
+	}
+
+	return open, notes
+}
+
+// workedIn says the business ran, not suspended, in some month of year.
+func workedIn(c config, year int) bool {
+	for m := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC); m.Year() == year; m = m.AddDate(0, 1, 0) {
+		if !m.Before(c.businessStart) && !c.suspended(m) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // monthState says where a month stands on day today, and how loud to say it.
 func monthState(m month, today time.Time) (text string, level string) {
 	if m.suspended && !m.invoiced {
@@ -313,15 +360,17 @@ func cmdStatus(args []string) error {
 	}
 
 	months, notes := buildYear(c, invs, pays, year, today, cacheDir())
+	carried, carriedNotes := carriedOver(c, invs, pays, year, today, cacheDir())
 	found = append(found, asFindings("payments", pwarns)...)
 	found = append(found, asFindings("rates", notes)...)
+	found = append(found, asFindings("rates", carriedNotes)...)
 	found = append(found, checkInvoices(invs)...)
 	if f, ok := healthCliff(c, months, pays, year, today); ok {
 		found = append(found, f)
 	}
 
 	w := newReport(os.Stdout)
-	failed := printStatus(w, c, year, today, months, found)
+	failed := printStatus(w, c, year, today, append(carried, months...), found)
 	if err := w.flush(); err != nil {
 		return err
 	}
@@ -458,16 +507,24 @@ func printStatus(
 	),
 	)
 
-	// year so far
+	// year so far: this year's months only, not the ones carried over
 	revenue := amount{0, official}
-	for _, m := range months {
+	var latest *month
+	for i, m := range months {
+		if m.start.Year() != year {
+			continue
+		}
+
 		revenue.grosze += m.revenue.grosze
 		revenue.status = min(revenue.status, m.revenue.status)
+		latest = &months[i]
 	}
 
 	label := func(s string) string { return paint(w, dim, fmt.Sprintf("%-13s", s)) }
-	w.printf("\n%s %s PLN revenue, health bracket %s\n", label("Year so far"),
-		paint(w, bold, plnText(revenue)), bracketName(months[len(months)-1].bracket))
+	if latest != nil {
+		w.printf("\n%s %s PLN revenue, health bracket %s\n", label("Year so far"),
+			paint(w, bold, plnText(revenue)), bracketName(latest.bracket))
+	}
 
 	if next >= 0 {
 		m := months[next]
@@ -524,8 +581,14 @@ func printStatus(
 		row("total", plnText(total), "PLN", true)
 	}
 
+	// ponytail: this year's months only. The months carried over are the unpaid
+	// ones of a year that may well have payments; status --year hints for that year.
 	anyPaid, firstDue, lastDue := false, -1, -1
 	for i, m := range months {
+		if m.start.Year() != year {
+			continue
+		}
+
 		anyPaid = anyPaid || m.zusPaid > 0 || m.ryczPaid
 
 		if m.suspended && !m.invoiced {
@@ -550,6 +613,26 @@ func printStatus(
 			tag(w, cyan, "INFO"),
 			rng,
 		)
+	}
+
+	// ponytail: the tool has no record of the return being filed or the
+	// settlement paid, so each item stays until its date passes
+	if inCarryWindow(year, today) && workedIn(c, year-1) {
+		var todo []string
+		pitFrom := shiftDeadline("PL", time.Date(year, 2, 15, 0, 0, 0, 0, time.UTC))
+		pitTo := shiftDeadline("PL", time.Date(year, 4, 30, 0, 0, 0, 0, time.UTC))
+		healthBy := shiftDeadline("PL", time.Date(year, 5, 20, 0, 0, 0, 0, time.UTC))
+
+		if !today.After(pitTo) {
+			todo = append(todo, "PIT-28 between "+pitFrom.Format(time.DateOnly)+" and "+pitTo.Format(time.DateOnly))
+		}
+		if !today.After(healthBy) {
+			todo = append(todo, "health settlement by "+healthBy.Format(time.DateOnly)+" (ryczalt year)")
+		}
+
+		if len(todo) > 0 {
+			w.printf("\n%s %d still to settle: %s\n", tag(w, cyan, "INFO"), year-1, strings.Join(todo, ", "))
+		}
 	}
 
 	more := 0

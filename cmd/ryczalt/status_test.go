@@ -178,3 +178,149 @@ func TestStatusHintSkipsSuspended(t *testing.T) {
 		t.Errorf("want %q in:\n%s", want, r.b.String())
 	}
 }
+
+// A business that began in November 2026, with invoices for November and
+// December, as the status view of today shows it: this year's months with
+// last year's open ones in front, as cmdStatus builds them.
+func carryView(t *testing.T, c config, files map[string]string, pays []payment, today string) (string, bool) {
+	t.Helper()
+	fakeNBPFlat(t)
+
+	c.archive, c.nip, c.rate, c.revenueBasis = writeArchive(t, files), testNIP, "12", "period_end"
+	c.preferentialUntil, c.chorobowa = day(t, "2027-12-01"), true
+
+	now := day(t, today)
+	oldClock := clock
+	clock = func() time.Time { return now.Add(12 * time.Hour) }
+	t.Cleanup(func() { clock = oldClock })
+
+	invs, _, err := readArchive(c.archive, c.nip)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	months, _ := buildYear(c, invs, pays, now.Year(), now, t.TempDir())
+	carried, _ := carriedOver(c, invs, pays, now.Year(), now, t.TempDir())
+
+	r := newReport(nil)
+	failed := printStatus(r, c, now.Year(), now, append(carried, months...), nil)
+
+	return r.b.String(), failed
+}
+
+func novDecFiles() map[string]string {
+	return map[string]string{
+		"2026-11/ksef-INV-11.xml": fa("INV-11", "2026-12-01", "2026-11-30"),
+		"2026-12/ksef-INV-12.xml": fa("INV-12", "2027-01-01", "2026-12-31"),
+	}
+}
+
+func paidMonth(t *testing.T, period string) []payment {
+	on, p := day(t, "2026-12-15"), day(t, period+"-01")
+	return []payment{
+		{id: period + "s", paidOn: on, period: p, kind: "social", grosze: 45618},
+		{id: period + "h", paidOn: on, period: p, kind: "health", grosze: 49835},
+		{id: period + "r", paidOn: on, period: p, kind: "ryczalt", grosze: 160000},
+	}
+}
+
+func TestStatusCarriesLastYear(t *testing.T) {
+	c := config{businessStart: day(t, "2026-11-01")}
+	pays := paidMonth(t, "2026-11")
+
+	out, failed := carryView(t, c, novDecFiles(), pays, "2027-01-10")
+	if !strings.Contains(out, "\n2026-12 ") || strings.Contains(out, "2026-11") {
+		t.Errorf("want December in the table and November out of it:\n%s", out)
+	}
+	if !strings.Contains(out, "Next payment  Wed 2027-01-20, for 2026-12\n") || failed {
+		t.Errorf("failed %v, want December as the next payment:\n%s", failed, out)
+	}
+
+	out, failed = carryView(t, c, novDecFiles(), pays, "2027-01-25")
+	if !strings.Contains(out, "Overdue       Wed 2027-01-20, for 2026-12\n") || !failed {
+		t.Errorf("failed %v, want December overdue:\n%s", failed, out)
+	}
+
+	out, failed = carryView(t, c, novDecFiles(), append(pays, paidMonth(t, "2026-12")...), "2027-01-25")
+	if strings.Contains(out, "\n2026-1") || failed {
+		t.Errorf("failed %v, want no 2026 row once December is paid:\n%s", failed, out)
+	}
+}
+
+func TestStatusYearSoFarIsThisYear(t *testing.T) {
+	files := novDecFiles()
+	files["2027-01/ksef-INV-01.xml"] = fa("INV-01", "2027-02-01", "2027-01-31")
+
+	c := config{businessStart: day(t, "2026-11-01")}
+	out, _ := carryView(t, c, files, paidMonth(t, "2026-11"), "2027-02-05")
+
+	if !strings.Contains(out, "\n2026-12 ") || !strings.Contains(out, "Year so far   13 332.00 PLN revenue, health bracket up to 60k\n") {
+		t.Errorf("want December listed and 2027 revenue only in the year so far:\n%s", out)
+	}
+}
+
+func TestStatusSettleLine(t *testing.T) {
+	both := "[ INFO ] 2026 still to settle: PIT-28 between 2027-02-15 and 2027-04-30, health settlement by 2027-05-20 (ryczalt year)\n"
+	health := "[ INFO ] 2026 still to settle: health settlement by 2027-05-20 (ryczalt year)\n"
+	c := config{businessStart: day(t, "2026-11-01")}
+
+	for today, want := range map[string]string{"2027-01-10": both, "2027-05-10": health, "2027-06-01": ""} {
+		out, _ := carryView(t, c, novDecFiles(), nil, today)
+		if want == "" && strings.Contains(out, "still to settle") || !strings.Contains(out, want) {
+			t.Errorf("%s: want %q in:\n%s", today, want, out)
+		}
+	}
+
+	c.suspendedFrom = day(t, "2026-11-01")
+	if out, _ := carryView(t, c, nil, nil, "2027-01-10"); strings.Contains(out, "still to settle") {
+		t.Errorf("last year was suspended throughout:\n%s", out)
+	}
+}
+
+// The hint to record payments speaks for this year's months. Carried months
+// are the unpaid ones of a year that has payments, so they neither trigger
+// it nor enter its range.
+func TestStatusHintIsForThisYear(t *testing.T) {
+	c := config{businessStart: day(t, "2026-11-01")}
+
+	// January: November and December are carried and overdue, nothing of 2027 is due yet
+	out, _ := carryView(t, c, nil, nil, "2027-01-25")
+	if !strings.Contains(out, "2026-12") || strings.Contains(out, "no payments recorded yet") {
+		t.Errorf("carried months alone must not bring the hint:\n%s", out)
+	}
+
+	// March: January and February of 2027 are due and unpaid
+	out, _ = carryView(t, c, nil, nil, "2027-03-25")
+	if !strings.Contains(out, "ryczalt paid --on-due 2027-01..2027-02\n") {
+		t.Errorf("want the hint for the months of 2027 only:\n%s", out)
+	}
+}
+
+// Outside the window the view is what it always was.
+func TestStatusOutsideWindowUnchanged(t *testing.T) {
+	c := config{businessStart: day(t, "2026-10-01")}
+	files := map[string]string{"2026-10/ksef-INV-10.xml": fa("INV-10", "2026-11-01", "2026-10-31")}
+
+	out, failed := carryView(t, c, files, nil, "2026-11-25")
+	want := `ryczalt 2026
+Wed 2026-11-25 | 12% ryczalt | preferential ZUS with chorobowa | rules official
+
+Month    Invoice  Revenue PLN  Ryczalt*  Social  Health  Due             State
+2026-10  INV-10     13 332.00     1 600  456.18  498.35  Fri 2026-11-20  [ FAIL ] zus, ryczalt
+2026-11  -                  -       n/a  456.18  498.35  Mon 2026-12-21  in progress
+
+* in full, before deducting paid ZUS (social, half of health); PIT-28 settles the deductions
+
+Year so far   13 332.00 PLN revenue, health bracket up to 60k
+
+Overdue       Fri 2026-11-20, for 2026-10
+  zus               954.53  social 456.18, health 498.35
+  ryczalt         1 600.00  in full*
+  total           2 554.53  PLN
+
+[ INFO ] no payments recorded yet; if all were paid on time: ryczalt paid --on-due 2026-10
+`
+	if out != want || !failed {
+		t.Errorf("failed %v:\n%s", failed, out)
+	}
+}

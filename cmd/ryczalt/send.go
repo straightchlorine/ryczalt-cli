@@ -100,6 +100,28 @@ func ksefEnv(c config) string {
 	return "test"
 }
 
+// preparedDraft is the draft beside the XML that send wrote for inv, when
+// inv was read from that XML and the draft is the same invoice.
+func preparedDraft(archive string, inv invoice) (invoice, bool) {
+	if filepath.Base(inv.source) != "ksef-"+unsafeName.ReplaceAllString(inv.number, "-")+".xml" {
+		return invoice{}, false
+	}
+
+	draft := filepath.Join(filepath.Dir(inv.source), "invoice.json")
+	b, err := os.ReadFile(filepath.Join(archive, draft))
+	if err != nil {
+		return invoice{}, false
+	}
+
+	d, err := readInvoify(b)
+	if err != nil || d.number != inv.number {
+		return invoice{}, false
+	}
+
+	d.source = draft
+	return d, true
+}
+
 // cmdSend sends a month's invoice to KSeF through ksef-cli: ksef convert
 // --send on the invoice.json, saving the FA(3) as ksef-NUMBER.xml and its
 // receipt (UPO) beside it. ksef asks before it sends.
@@ -132,13 +154,24 @@ func cmdSend(args []string) error {
 	// drafts from the KSeF start on that have no KSeF number yet
 	var todo []invoice
 	for _, inv := range invs {
-		if inv.ksefNumber == "" && filepath.Base(inv.source) == "invoice.json" &&
-			!inv.issued.Before(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)) {
+		if inv.ksefNumber != "" || inv.issued.Before(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)) {
+			continue
+		}
+
+		// a send that was declined leaves the XML it prepared behind, and the
+		// archive then reads that instead of the draft. The draft still waits,
+		// and it is the draft that goes out, with whatever was changed in it since.
+		if d, ok := preparedDraft(c.archive, inv); ok {
+			inv = d
+		}
+
+		if filepath.Base(inv.source) == "invoice.json" {
 			todo = append(todo, inv)
 		}
 	}
 
-	if flags.NArg() == 1 {
+	named := flags.NArg() == 1
+	if named {
 		month, err := time.Parse("2006-01", flags.Arg(0))
 		if err != nil {
 			return exitError{2, fmt.Errorf("month %q is not like 2026-11", flags.Arg(0))}
@@ -150,6 +183,8 @@ func cmdSend(args []string) error {
 	}
 
 	switch {
+	case len(todo) == 0 && named:
+		return errors.New("no invoice for work in " + flags.Arg(0) + " is waiting to be sent")
 	case len(todo) == 0:
 		return errors.New("no invoice waiting to be sent (every invoice.json has a KSeF number)")
 	case len(todo) > 1:
@@ -169,6 +204,15 @@ func cmdSend(args []string) error {
 		return fmt.Errorf("%s exists: %s looks sent already", upo, inv.number)
 	}
 
+	// one rate in the XML, the description and the register; ksef-cli's own
+	// default is the last business day before the issue date
+	var rate nbpRate
+	if inv.currency != "PLN" {
+		if _, rate, err = revenuePLN(inv, c.revenueBasis, cacheDir()); err != nil {
+			return err
+		}
+	}
+
 	w := newReport(os.Stderr)
 	today := todayWarsaw()
 	if env := ksefEnv(c); env != "prod" {
@@ -185,11 +229,18 @@ func cmdSend(args []string) error {
 		w.println()
 	}
 
+	ksefArgs := []string{"convert", "--send", "--sale-date", inv.serviceEnd.Format(time.DateOnly)}
+	if inv.currency != "PLN" {
+		ksefArgs = append(ksefArgs, "--rate", rate.Mid)
+		w.printf("%s rate %s PLN per %s, NBP table %s of %s, as in the revenue register\n",
+			tag(w, cyan, "INFO"), rate.Mid, inv.currency, rate.Table, rate.Date)
+	}
+
 	if err := w.flush(); err != nil {
 		return err
 	}
 
-	ksefArgs := []string{"convert", "--send", "--sale-date", inv.serviceEnd.Format(time.DateOnly), src, out}
+	ksefArgs = append(ksefArgs, src, out)
 	cmd := exec.Command(cmp.Or(c.ksefBin, "ksef"), ksefArgs...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if c.ksefConfig != "" {

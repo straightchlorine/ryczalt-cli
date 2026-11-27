@@ -107,6 +107,8 @@ Error: /home/jan/invoices/2026-11/contract.pdf already exists, leaving it alone
 
 Wysyła fakturę do KSeF przez [ksef-cli](https://codeberg.org/piotrkrzysztof/ksef-cli). Wywołuje `ksef convert --send --sale-date DATA invoice.json ksef-NUMER.xml`, gdzie `DATA` to ostatni dzień pracy. FA(3) zapisuje się obok jako `ksef-NUMER.xml`, a UPO jako `ksef-NUMER.upo.xml`. Przed wysłaniem pyta ksef-cli.
 
+Przy fakturze w walucie obcej `send` przekazuje ksef-cli kurs NBP, po którym liczy przychód (`--rate KURS`), i wypisuje go na stderr. Dzięki temu FA(3) ma ten sam kurs co opis faktury i ewidencja przychodów. Faktura w PLN nie dostaje `--rate`.
+
 Wysyła ten jedyny `invoice.json` bez numeru KSeF, wystawiony od 1 kwietnia 2026. `MONTH` wskazuje miesiąc pracy, gdy czeka kilka faktur. Program ksef-cli to `ksef` z `PATH` albo `bin=` z sekcji `[ksef]`. Klucz `config=` trafia do niego jako `KSEF_CONFIG`.
 
 Ostrzega na stderr, gdy:
@@ -114,7 +116,7 @@ Ostrzega na stderr, gdy:
 - ksef-cli ma ustawione `env` inne niż `prod`,
 - faktura jest wystawiona innego dnia niż dzisiaj. KSeF zapisze ją wtedy jako `Offline`. Gdy to później niż następny dzień roboczy, program podpowiada `ryczalt new --date`.
 
-Gdy ksef-cli zapisał UPO i w `[r2]` jest `bucket`, po wysyłce działa `ryczalt sync` (bez `--delete`). Gdy UPO nie ma, bo wysyłkę odrzucono przy pytaniu albo KSeF jeszcze przetwarza, nic dalej się nie dzieje.
+Gdy ksef-cli zapisał UPO i w `[r2]` jest `bucket`, po wysyłce działa `ryczalt sync` (bez `--delete`). Gdy UPO nie ma, bo wysyłkę odrzucono przy pytaniu albo KSeF jeszcze przetwarza, nic dalej się nie dzieje. Po odmowie kolejne `ryczalt send` przygotowuje i proponuje fakturę od nowa.
 
 Wynik `ryczalt send`, gdy ksef-cli nie ma `env=prod` w konfiguracji (domyślnie jest `test`). Dalej wypisuje już sam ksef-cli:
 
@@ -224,6 +226,35 @@ Overdue       Fri 2026-02-20, for 2026-01
   total           2 976.53  PLN
 
 [ INFO ] no payments recorded yet; if all were paid on time: ryczalt paid --on-due 2026-01..2026-10
+```
+
+Od 1 stycznia do 20 maja widok bieżącego roku pokazuje też miesiące poprzedniego roku, w których coś jeszcze czeka: nieopłacone ZUS lub ryczałt albo brak faktury. Są przed miesiącami bieżącego roku i liczą się do następnej płatności oraz do kodu wyjścia. Przychód od początku roku i podpowiedź o zapisaniu wpłat obejmują tylko bieżący rok. Termin 20 maja przesuwa się z weekendu lub święta, jak w `ryczalt year`.
+
+W tym samym czasie przed uwagami jest linia `[ INFO ]` z tym, co zostało do rozliczenia za poprzedni rok: PIT-28 (od 15 lutego do 30 kwietnia) i rozliczenie składki zdrowotnej (do 20 maja). Pozycja znika po swoim terminie. Program nie wie, czy zeznanie złożono ani czy rozliczenie opłacono, więc do tego czasu linia zostaje. Nie ma jej, gdy poprzedni rok był w całości zawieszony.
+
+`status --today 2027-01-10`. Kwota składki zdrowotnej na 2027 nie jest jeszcze opublikowana, stąd `n/a` w kolumnie `Health`:
+
+```
+ryczalt 2027
+Sun 2027-01-10 | 12% ryczalt | full ZUS with chorobowa | rules unknown
+
+Month    Invoice  Revenue PLN  Ryczalt*     Social  Health  Due             State
+2026-11  -                  -       n/a   1 926.76  830.58  Mon 2026-12-21  [ FAIL ] no invoice; zus unpaid
+2026-12  -                  -       n/a   1 926.76  830.58  Wed 2027-01-20  [ INFO ] not invoiced yet; due by 2027-01-15
+2027-01  -                  -       n/a  ~2 052.15     n/a  Mon 2027-02-22  in progress
+
+* in full, before deducting paid ZUS (social, half of health); PIT-28 settles the deductions
+
+Year so far   0.00 PLN revenue, health bracket up to 60k
+
+Overdue       Mon 2026-12-21, for 2026-11
+  zus             2 757.34  social 1 788.29, health 830.58, FP/FS 138.47
+  ryczalt                   not yet invoiced
+  total           2 757.34  PLN
+
+[ INFO ] 2026 still to settle: PIT-28 between 2027-02-15 and 2027-04-30, health settlement by 2027-05-20 (ryczalt year)
+
+1 more note about the archive: ryczalt check
 ```
 
 ## `ryczalt paid [-c CONFIG] [--on DATE | --on-due] PERIOD [KIND [AMOUNT]]`

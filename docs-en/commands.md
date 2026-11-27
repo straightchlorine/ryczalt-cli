@@ -107,6 +107,8 @@ Error: /home/jan/invoices/2026-11/contract.pdf already exists, leaving it alone
 
 Sends the invoice to KSeF through [ksef-cli](https://codeberg.org/piotrkrzysztof/ksef-cli). It runs `ksef convert --send --sale-date DATE invoice.json ksef-NUMBER.xml`, where `DATE` is the last day of the work. The FA(3) is saved beside it as `ksef-NUMBER.xml` and the UPO as `ksef-NUMBER.upo.xml`. ksef-cli asks before sending.
 
+For an invoice in a foreign currency, `send` passes ksef-cli the NBP rate it counts revenue at (`--rate RATE`) and prints it on stderr. So the FA(3) carries the same rate as the invoice description and the revenue register. A PLN invoice gets no `--rate`.
+
 It sends the one `invoice.json` without a KSeF number that was issued from 1 April 2026 on. `MONTH` names the month of work when several invoices wait. The ksef-cli program is `ksef` on `PATH`, or `bin=` from the `[ksef]` section. The `config=` key is passed to it as `KSEF_CONFIG`.
 
 It warns on stderr when:
@@ -114,7 +116,7 @@ It warns on stderr when:
 - ksef-cli has `env` set to anything but `prod`,
 - the invoice is issued on a day other than today. KSeF will then record it as `Offline`. If that is later than the next working day, the program suggests `ryczalt new --date`.
 
-When ksef-cli has saved the UPO and `[r2]` has a `bucket`, `ryczalt sync` runs after the send (without `--delete`). When there is no UPO, because the send was declined at the prompt or KSeF is still processing, nothing more happens.
+When ksef-cli has saved the UPO and `[r2]` has a `bucket`, `ryczalt sync` runs after the send (without `--delete`). When there is no UPO, because the send was declined at the prompt or KSeF is still processing, nothing more happens. After a declined send, running `ryczalt send` again prepares and offers the invoice again.
 
 The result of `ryczalt send` when ksef-cli's config does not have `env=prod` (the default is `test`). What follows is ksef-cli's own output:
 
@@ -224,6 +226,35 @@ Overdue       Fri 2026-02-20, for 2026-01
   total           2 976.53  PLN
 
 [ INFO ] no payments recorded yet; if all were paid on time: ryczalt paid --on-due 2026-01..2026-10
+```
+
+From 1 January to 20 May the view of the current year also shows the months of last year that still have something open: unpaid ZUS or ryczałt, or a missing invoice. They come before the months of the current year and count towards the next payment and the exit code. The year's revenue and the hint to record payments cover the current year only. The 20 May deadline moves off a weekend or holiday, as in `ryczalt year`.
+
+During the same time a `[ INFO ]` line before the notes lists what is left to settle for last year: PIT-28 (from 15 February to 30 April) and the health settlement (by 20 May). An item drops out after its deadline. The program does not know whether the return was filed or the settlement paid, so the line stays until then. It is absent when last year was suspended throughout.
+
+`status --today 2027-01-10`. The health figure for 2027 is not published yet, hence `n/a` in the `Health` column:
+
+```
+ryczalt 2027
+Sun 2027-01-10 | 12% ryczalt | full ZUS with chorobowa | rules unknown
+
+Month    Invoice  Revenue PLN  Ryczalt*     Social  Health  Due             State
+2026-11  -                  -       n/a   1 926.76  830.58  Mon 2026-12-21  [ FAIL ] no invoice; zus unpaid
+2026-12  -                  -       n/a   1 926.76  830.58  Wed 2027-01-20  [ INFO ] not invoiced yet; due by 2027-01-15
+2027-01  -                  -       n/a  ~2 052.15     n/a  Mon 2027-02-22  in progress
+
+* in full, before deducting paid ZUS (social, half of health); PIT-28 settles the deductions
+
+Year so far   0.00 PLN revenue, health bracket up to 60k
+
+Overdue       Mon 2026-12-21, for 2026-11
+  zus             2 757.34  social 1 788.29, health 830.58, FP/FS 138.47
+  ryczalt                   not yet invoiced
+  total           2 757.34  PLN
+
+[ INFO ] 2026 still to settle: PIT-28 between 2027-02-15 and 2027-04-30, health settlement by 2027-05-20 (ryczalt year)
+
+1 more note about the archive: ryczalt check
 ```
 
 ## `ryczalt paid [-c CONFIG] [--on DATE | --on-due] PERIOD [KIND [AMOUNT]]`

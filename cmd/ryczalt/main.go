@@ -51,8 +51,9 @@ Subcommands:
   status      Month by month for the year: revenue from the invoices in the
               archive (in PLN at the NBP rate the PIT act requires), ryczalt,
               social and health contributions, the payment deadline and what
-              still needs doing. Exits 1 when something is overdue or an
-              invoice is missing after its deadline.
+              still needs doing. Until 20 May it also lists the months of
+              last year that are still open. Exits 1 when something is
+              overdue or an invoice is missing after its deadline.
   paid        Record a payment for a month (2026-10) or a range of months
               (2026-01..2026-10): KIND is zus, social, health, fpfs or
               ryczalt, by default zus and ryczalt at the amounts due. Paid

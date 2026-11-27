@@ -63,6 +63,10 @@ func TestAdd(t *testing.T) {
 }
 
 func TestSendThenSync(t *testing.T) {
+	var nbpCalls []string
+	fakeNBP(t, &nbpCalls) // its last table is 212/A of 2026-10-30, 4.3955
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
 	log := filepath.Join(t.TempDir(), "calls.log")
 	t.Setenv("CALLS", log)
 
@@ -89,15 +93,20 @@ echo '<Potwierdzenie><Dokument><NumerKSeFDokumentu>K-11</NumerKSeFDokumentu><Num
 	mustWrite(t, cfg, []byte(strings.Replace(validConfig, "/srv/invoices", root, 1)+
 		"[ksef]\nbin="+ksef+"\nconfig="+ksefConf+"\n[r2]\nbucket=invoices\nprofile=r2\n"))
 
-	if _, err := run(t, cmdSend, "-c", cfg); err != nil {
+	out, err := run(t, cmdSend, "-c", cfg)
+	if err != nil {
 		t.Fatal(err)
+	}
+
+	if want := "[ INFO ] rate 4.3955 PLN per EUR, NBP table 212/A/NBP/2026 of 2026-10-30, as in the revenue register\n"; !strings.Contains(out, want) {
+		t.Errorf("report:\n%s\nwant the line %q", out, want)
 	}
 
 	b, _ := os.ReadFile(log)
 	calls := strings.Split(strings.TrimSpace(string(b)), "\n")
 
 	dir := filepath.Join(root, "2026-11")
-	wantKsef := "ksef convert --send --sale-date 2026-10-31 " + filepath.Join(dir, "invoice.json") + " " +
+	wantKsef := "ksef convert --send --sale-date 2026-10-31 --rate 4.3955 " + filepath.Join(dir, "invoice.json") + " " +
 		filepath.Join(dir, "ksef-INV-11.xml") + " KSEF_CONFIG=" + ksefConf
 	if len(calls) != 2 || calls[0] != wantKsef || !strings.HasPrefix(calls[1], "aws s3 sync "+root+" s3://invoices/ --profile r2 --exclude .stfolder") {
 		t.Errorf("calls:\n%s\nwant first\n%s", b, wantKsef)
@@ -128,6 +137,77 @@ echo '<Potwierdzenie><Dokument><NumerKSeFDokumentu>K-11</NumerKSeFDokumentu><Num
 	}
 }
 
+// A PLN invoice gets no --rate: ksef-cli rejects one.
+func TestSendPLN(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "calls.log")
+	t.Setenv("CALLS", log)
+
+	ksef := fakeTool(t, "ksef", `echo "ksef $*" >> "$CALLS"`)
+	root := writeArchive(t, map[string]string{
+		"2026-11/invoice.json": strings.NewReplacer(
+			"DEV-2026-10-001", "INV-11", "2026-10-01T", "2026-11-01T", `"currency":"EUR"`, `"currency":"PLN"`,
+		).Replace(invoifyTemplate),
+	})
+
+	cfg := filepath.Join(t.TempDir(), "ryczalt.conf")
+	mustWrite(t, cfg, []byte(strings.Replace(validConfig, "/srv/invoices", root, 1)+"[ksef]\nbin="+ksef+"\n"))
+
+	if _, err := run(t, cmdSend, "-c", cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	b, _ := os.ReadFile(log)
+	if got := string(b); strings.Contains(got, "--rate") || !strings.HasPrefix(got, "ksef convert --send --sale-date 2026-10-31 ") {
+		t.Errorf("calls: %s", got)
+	}
+}
+
+// Declining at ksef-cli's prompt leaves the prepared XML and no UPO; send
+// offers the invoice again from its draft.
+func TestSendAgainAfterDeclined(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "calls.log")
+	t.Setenv("CALLS", log)
+
+	faFile := filepath.Join(t.TempDir(), "fa.xml")
+	mustWrite(t, faFile, []byte(fa("INV-11", "2026-11-01", "2026-10-31")))
+	t.Setenv("FA", faFile)
+
+	ksef := fakeTool(t, "ksef", `echo "$*" >> "$CALLS"
+for a; do out=$a; done
+cat "$FA" > "$out"
+`)
+	root := writeArchive(t, map[string]string{
+		"2026-11/invoice.json": strings.NewReplacer("DEV-2026-10-001", "INV-11", "2026-10-01T", "2026-11-01T", `"currency":"EUR"`, `"currency":"PLN"`).Replace(invoifyTemplate),
+	})
+
+	cfg := filepath.Join(t.TempDir(), "ryczalt.conf")
+	mustWrite(t, cfg, []byte(strings.Replace(validConfig, "/srv/invoices", root, 1)+"[ksef]\nbin="+ksef+"\n"))
+
+	if _, err := run(t, cmdSend, "-c", cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// the draft is corrected before the second try: issued a month later
+	draft := filepath.Join(root, "2026-11", "invoice.json")
+	b, _ := os.ReadFile(draft)
+	mustWrite(t, draft, []byte(strings.Replace(string(b), "2026-11-01T", "2026-12-01T", 1)))
+
+	if _, err := run(t, cmdSend, "-c", cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	b, _ = os.ReadFile(log)
+	calls := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(calls) != 2 || !strings.Contains(calls[1], " "+draft+" ") {
+		t.Fatalf("calls:\n%s", b)
+	}
+
+	// the second call follows the draft as it is now, not the XML left behind
+	if !strings.Contains(calls[0], "--sale-date 2026-10-31") || !strings.Contains(calls[1], "--sale-date 2026-11-30") {
+		t.Errorf("sale dates:\n%s", b)
+	}
+}
+
 func TestSendRefusals(t *testing.T) {
 	root := writeArchive(t, map[string]string{
 		"2026-10/invoice.json": invoifyTemplate,
@@ -142,6 +222,9 @@ func TestSendRefusals(t *testing.T) {
 	}
 	if _, err := run(t, cmdSend, "-c", cfg, "2026-10"); err == nil || !strings.Contains(err.Error(), "install ksef-cli") {
 		t.Errorf("missing ksef: %v", err)
+	}
+	if _, err := run(t, cmdSend, "-c", cfg, "2026-08"); err == nil || err.Error() != "no invoice for work in 2026-08 is waiting to be sent" {
+		t.Errorf("month without a draft: %v", err)
 	}
 	if _, err := run(t, cmdSync, "-c", cfg); err == nil || !strings.Contains(err.Error(), "no [r2] bucket") {
 		t.Errorf("sync without r2: %v", err)
